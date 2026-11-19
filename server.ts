@@ -1317,11 +1317,15 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, timestamp: Date.now() });
 });
 
+let botProfileCooldownUntil = 0;
+
 // Bot Security & Bio Integrity Watchdog
-async function syncOfficialBotBio(): Promise<boolean> {
+async function syncOfficialBotBio(purgeForeign = false): Promise<boolean> {
   if (!BOT_TOKEN) return false;
+  if (Date.now() < botProfileCooldownUntil) return false;
   try {
-    const postCall = (endpoint: string, body: any) => new Promise((resolve) => {
+    const postCall = (endpoint: string, body: any) => new Promise<any>((resolve) => {
+      if (Date.now() < botProfileCooldownUntil) return resolve({ ok: false, skipped: true });
       const p = JSON.stringify(body);
       const r = https.request(`https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`, {
         method: "POST",
@@ -1330,7 +1334,15 @@ async function syncOfficialBotBio(): Promise<boolean> {
         let d = "";
         res.on("data", c => d += c);
         res.on("end", () => {
-          try { resolve(JSON.parse(d)); } catch { resolve({}); }
+          try {
+            const parsed = JSON.parse(d);
+            if (parsed?.error_code === 429 && parsed?.parameters?.retry_after) {
+              botProfileCooldownUntil = Date.now() + (Number(parsed.parameters.retry_after) + 5) * 1000;
+            }
+            resolve(parsed);
+          } catch {
+            resolve({});
+          }
         });
       });
       r.on("error", () => resolve({}));
@@ -1338,11 +1350,13 @@ async function syncOfficialBotBio(): Promise<boolean> {
       r.end();
     });
 
-    // 1. Purge language overrides used by spammers
-    const foreignLangs = ['ru', 'bn', 'hi', 'ar', 'es', 'pt', 'id', 'de', 'fr', 'zh', 'fa', 'tr', 'uz'];
-    for (const l of foreignLangs) {
-      await postCall("setMyShortDescription", { short_description: "", language_code: l });
-      await postCall("setMyDescription", { description: "", language_code: l });
+    if (purgeForeign) {
+      const foreignLangs = ['ru', 'bn', 'hi', 'ar', 'es', 'pt', 'id', 'de', 'fr', 'zh', 'fa', 'tr', 'uz'];
+      for (const l of foreignLangs) {
+        if (Date.now() < botProfileCooldownUntil) break;
+        await postCall("setMyShortDescription", { short_description: "", language_code: l });
+        await postCall("setMyDescription", { description: "", language_code: l });
+      }
     }
 
     const cfg = await getServerConfigWithDefaults();
@@ -1372,8 +1386,10 @@ async function syncOfficialBotBio(): Promise<boolean> {
       });
     }
 
-    console.log(`[Bot Security] Official ${activeAppName} (@${BOT_USERNAME}) bio, description & menu button (${activeMiniUrl}) enforced successfully.`);
-    return true;
+    if (Date.now() >= botProfileCooldownUntil) {
+      console.log(`[Bot Security] Official ${activeAppName} (@${BOT_USERNAME}) bio, description & menu button (${activeMiniUrl}) enforced successfully.`);
+    }
+    return Date.now() >= botProfileCooldownUntil;
   } catch (err) {
     console.warn("[Bot Security] syncOfficialBotBio error:", err);
     return false;
@@ -1381,7 +1397,7 @@ async function syncOfficialBotBio(): Promise<boolean> {
 }
 
 async function enforceBotProfile() {
-  if (!BOT_TOKEN) return;
+  if (!BOT_TOKEN || Date.now() < botProfileCooldownUntil) return;
   try {
     const fetchApi = (method: string, lang = "") => new Promise<any>((resolve) => {
       const qs = lang ? `?language_code=${encodeURIComponent(lang)}` : "";
@@ -1413,7 +1429,7 @@ async function enforceBotProfile() {
 
     if (s1.includes("chatprovider") || s2.includes("chatprovider") || !s1.includes(expectedAppName) || !s2.includes(expectedAppName) || menuUrlMismatch || menuTextMismatch) {
       console.log(`[Bot Security] Profile or Menu mismatch detected! Syncing official ${expectedAppName} profile & menu button...`);
-      await syncOfficialBotBio();
+      await syncOfficialBotBio(false);
     }
   } catch (e) {
     // Ignore minor network quirks
@@ -2754,9 +2770,9 @@ async function startServer() {
     startSecureRtdbSyncLoop();
     // Start background Telegram polling
     startTelegramPolling();
-    // Enforce official bio immediately and monitor every 30 seconds
-    syncOfficialBotBio();
-    setInterval(enforceBotProfile, 30000);
+    // Enforce official bio only if mismatched and monitor every 5 minutes
+    enforceBotProfile();
+    setInterval(enforceBotProfile, 300000);
   });
 }
 
