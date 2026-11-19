@@ -17,7 +17,7 @@ export const BrandTopHeader = memo(function BrandTopHeader() {
         {!logoFailed ? (
           <img
             src={headerLogo}
-            alt="Digital Platform"
+            alt="Nagad88"
             width={156}
             height={52}
             loading="eager"
@@ -29,7 +29,7 @@ export const BrandTopHeader = memo(function BrandTopHeader() {
           />
         ) : (
           <span className="truncate text-[16px] font-extrabold tracking-tight text-amber-300">
-            Digital Platform
+            Nagad88
           </span>
         )}
       </div>

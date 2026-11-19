@@ -377,7 +377,7 @@ function toSortedArray(collectionName: string, map: Record<string, any> | null |
 let cachedCfg: { data: Record<string, any>; at: number } | null = null;
 async function getServerConfigWithDefaults(env: WorkerEnv): Promise<Record<string, any>> {
   const now = Date.now();
-  const appName = (env.APP_NAME || "ManeiShopBD").trim();
+  const appName = (env.APP_NAME || "Nagad88").trim();
   const botUsername = (env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
   const miniAppUrl = (env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
 
@@ -500,7 +500,7 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
   }
 
   const cfg = await getServerConfigWithDefaults(env);
-  const appTitle = String(cfg.appName || env.APP_NAME || "ManeiShopBD").trim();
+  const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
   const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
   const wb = Number(cfg.welcomeBonus ?? 0.01);
   const l1Bonus = Number(cfg.referralBonus ?? 0.5);
@@ -693,7 +693,7 @@ export default {
 
         let user = await fetchFirebase<any>(env, `users/${tid}`);
         let isBrandNewUser = false;
-        const appTitle = String(cfg.appName || env.APP_NAME || "ManeiShopBD").trim();
+        const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
         const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
         const openAppMarkup = buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`);
         const wb = Number(cfg.welcomeBonus ?? 0.01);
@@ -877,7 +877,7 @@ export default {
         if (isDemo || !/^\d+$/.test(tid)) return json({ ok: true, delivered: false, user });
 
         const cfg = await getServerConfigWithDefaults(env);
-        const appTitle = String(cfg.appName || env.APP_NAME || "ManeiShopBD").trim();
+        const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
         const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
         const delivered = await sendTelegramMessage(
           env,
@@ -1300,7 +1300,7 @@ export default {
         const r = await fetch(`https://api.telegram.org/bot${botToken}/setChatMenuButton`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ menu_button: { type: "web_app", text: `🚀 Open ${cfg.appName || "ManeiShopBD"}`, web_app: { url: targetUrl } } })
+          body: JSON.stringify({ menu_button: { type: "web_app", text: `🚀 Open ${cfg.appName || "Nagad88"}`, web_app: { url: targetUrl } } })
         });
         return json(await r.json().catch(() => ({ ok: false })));
       }

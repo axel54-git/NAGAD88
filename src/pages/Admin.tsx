@@ -353,7 +353,7 @@ export function Admin() {
             onClick={() => navigate('/')}
             className="mt-3 flex items-center justify-center gap-1.5 w-full text-xs text-slate-400 hover:text-white transition py-2"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to ManeiShop App
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to Nagad88 App
           </button>
         </form>
       </main>
@@ -2572,7 +2572,7 @@ export function Admin() {
                         url: u ? `https://t.me/${u}` : newChannelData.url
                       });
                     }}
-                    placeholder="ManeiShopBD_Support"
+                    placeholder="Nagad88_Support"
                     className="h-9 w-full rounded-xl border border-slate-200 pl-7 pr-3 text-xs font-mono outline-none focus:border-brand-500"
                   />
                 </div>
@@ -2588,7 +2588,7 @@ export function Admin() {
                   onChange={(e) =>
                     setNewChannelData({ ...newChannelData, url: e.target.value.trim() })
                   }
-                  placeholder="https://t.me/ManeiShopBD_Support"
+                  placeholder="https://t.me/Nagad88_Support"
                   className="h-9 w-full rounded-xl border border-slate-200 px-3 text-xs outline-none focus:border-brand-500"
                 />
               </div>

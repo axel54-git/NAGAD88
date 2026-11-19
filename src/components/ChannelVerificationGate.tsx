@@ -225,7 +225,7 @@ export function ChannelVerificationGate({ children }: { children: React.ReactNod
               চ্যানেল মেম্বারশিপ যাচাই হচ্ছে...
             </h2>
             <p className="mt-0.5 text-[11px] text-amber-200/75 font-medium">
-              {config.appName || "ManeiShopBD"} • স্বয়ংক্রিয় ভেরিফিকেশন
+              {config.appName || "Nagad88"} • স্বয়ংক্রিয় ভেরিফিকেশন
             </p>
             <div className="mt-2.5 h-1.5 w-40 overflow-hidden rounded-full bg-black/50 mx-auto">
               <div className="h-full w-full bg-gradient-to-r from-amber-500 via-yellow-300 to-amber-500 animate-[loading_1.2s_ease-in-out_infinite]" />

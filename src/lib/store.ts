@@ -14,7 +14,7 @@ import taskBannerSignup from '../assets/images/task_banner_signup_1794671744750.
 import taskBannerSocial from '../assets/images/task_banner_social_1794671746187.jpg';
 
 export const defaultConfig: AppConfig = {
-  appName: "ManeiShopBD",
+  appName: "Nagad88",
   botUsername: "Nadag88Bot",
   miniAppUrl: "https://nagad88.apk5y.workers.dev/",
   supportUrl: "https://t.me/ManeiShopBD_Site",
@@ -198,7 +198,7 @@ function loadInitialData(): AppDatabase {
     if (!raw) return deepClone(initialDatabase);
     const parsed = JSON.parse(raw);
     const mergedConfig: AppConfig = { ...defaultConfig, ...(parsed.config || {}) };
-    mergedConfig.appName = "ManeiShopBD";
+    mergedConfig.appName = "Nagad88";
     delete (mergedConfig as any).botToken;
     delete (mergedConfig as any).adminPinHash;
     delete (mergedConfig as any).adminPassword;
