@@ -1,0 +1,6 @@
+{
+  "name": "ManeiShopBD - Telegram Mini App Earnings Platform",
+  "description": "ManeiShopBD - Telegram Mini App for watching ads, completing tasks, referral network rewards, and USDT Binance withdrawals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
