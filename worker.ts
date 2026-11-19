@@ -646,11 +646,24 @@ export default {
 
     try {
       if (pathname === "/api/health" && request.method === "GET") {
-        return json({ ok: true, runtime: "cloudflare-worker", timestamp: Date.now() });
+        const missing = [
+          !(env.FIREBASE_DATABASE_URL || "").trim() && "FIREBASE_DATABASE_URL",
+          !(env.DATA_ENCRYPTION_KEY || "").trim() && "DATA_ENCRYPTION_KEY",
+          !(env.BOT_TOKEN || "").trim() && "BOT_TOKEN"
+        ].filter(Boolean);
+        return json({ ok: missing.length === 0, runtime: "cloudflare-worker", missingEnv: missing, timestamp: Date.now() });
       }
 
       // 1. Auth Session — Instant Login & Registration (<150ms)
       if (pathname === "/api/auth/session" && request.method === "POST") {
+        const missingEnv = [
+          !(env.FIREBASE_DATABASE_URL || "").trim() && "FIREBASE_DATABASE_URL",
+          !(env.DATA_ENCRYPTION_KEY || "").trim() && "DATA_ENCRYPTION_KEY",
+          !(env.BOT_TOKEN || "").trim() && "BOT_TOKEN"
+        ].filter(Boolean) as string[];
+        if (missingEnv.length > 0) {
+          return json({ ok: false, error: `server_env_missing:${missingEnv.join(", ")}` }, 503);
+        }
         const body = await readJson(request);
         const { initData, telegramUser, referredBy } = body || {};
         const cfg = await getServerConfigWithDefaults(env);

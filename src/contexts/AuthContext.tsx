@@ -251,7 +251,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (code.startsWith("api_405") || code.startsWith("api_404") || code === "api_html_no_backend") {
           setError('সার্ভার API সংযোগ পাওয়া যায়নি। Cloudflare Workers-এ নতুন কোড ও এনভায়রনমেন্ট সেটআপ করে পুনরায় ডিপ্লয় করুন।');
         } else if (code.startsWith("server_env_missing:")) {
-          setError(`সার্ভার সেটআপ অসম্পূর্ণ (${code.split(":")[1]})। Cloudflare Workers Settings-এ ভেরিয়েবলগুলো যোগ করুন।`);
+          const missing = code.slice("server_env_missing:".length).trim();
+          setError(`Cloudflare Workers-এ এই ভেরিয়েবলগুলো যোগ করা হয়নি: ${missing}। Workers Settings → Variables and Secrets-এ গিয়ে এগুলো যোগ করে Redeploy করুন।`);
         } else if (code === "invalid_telegram_init_data" || code === "telegram_init_data_required") {
           setError('টেলিগ্রাম সেশন ভেরিফাই হয়নি। অনুগ্রহ করে বটের মেনু বাটন থেকে আবার অ্যাপটি খুলুন।');
         } else {

@@ -1345,21 +1345,21 @@ async function syncOfficialBotBio(): Promise<boolean> {
       await postCall("setMyDescription", { description: "", language_code: l });
     }
 
+    const cfg = await getServerConfigWithDefaults();
+    const activeAppName = String(cfg.appName || APP_NAME).trim();
+    const activeMiniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
+
     // 2. Set official default bio & description
-    const defaultShort = `🛍️ ${APP_NAME} - ভিডিও বিজ্ঞাপন দেখুন ও রেফার করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে ইনকাম করুন!`;
-    const defaultDesc = `👋 স্বাগতম ${APP_NAME} অফিসিয়াল বটে!\n\n💰 প্রতিদিন ভিডিও বিজ্ঞাপন দেখুন ও স্পেশাল টাস্ক সম্পন্ন করে সরাসরি আয় করুন।\n👥 প্রতি সফল রেফারে পাবেন +$0.50 USDT!\n💵 নূন্যতম উইথড্র: $5.00 USDT (বিকাশ, নগদ, বাইন্যান্স)।\n\n🚀 এখনই কাজ শুরু করতে নিচের Start বাটনে চাপুন অথবা মেনু থেকে Mini App খুলুন!`;
+    const defaultShort = `🛍️ ${activeAppName} - ভিডিও বিজ্ঞাপন দেখুন ও রেফার করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে ইনকাম করুন!`;
+    const defaultDesc = `👋 স্বাগতম ${activeAppName} অফিসিয়াল বটে!\n\n💰 প্রতিদিন ভিডিও বিজ্ঞাপন দেখুন ও স্পেশাল টাস্ক সম্পন্ন করে সরাসরি আয় করুন।\n👥 প্রতি সফল রেফারে পাবেন +$0.50 USDT!\n💵 নূন্যতম উইথড্র: $5.00 USDT (বিকাশ, নগদ, বাইন্যান্স)।\n\n🚀 এখনই কাজ শুরু করতে নিচের Start বাটনে চাপুন অথবা মেনু থেকে Mini App খুলুন!`;
     await postCall("setMyShortDescription", { short_description: defaultShort });
     await postCall("setMyDescription", { description: defaultDesc });
 
     // 3. Set official English bio & description (so English Telegram users see official info)
-    const enShort = `🛍️ ${APP_NAME} - Watch video ads, complete tasks, invite friends and earn USDT!`;
-    const enDesc = `👋 Welcome to ${APP_NAME} Official Bot!\n\n💰 Watch daily video ads and complete tasks to earn USDT.\n👥 Earn +$0.50 USDT per referral!\n💵 Minimum withdrawal: $5.00 USDT (Bkash, Nagad, Binance).\n\n🚀 Tap Start below or open the Mini App to start earning now!`;
+    const enShort = `🛍️ ${activeAppName} - Watch video ads, complete tasks, invite friends and earn USDT!`;
+    const enDesc = `👋 Welcome to ${activeAppName} Official Bot!\n\n💰 Watch daily video ads and complete tasks to earn USDT.\n👥 Earn +$0.50 USDT per referral!\n💵 Minimum withdrawal: $5.00 USDT (Bkash, Nagad, Binance).\n\n🚀 Tap Start below or open the Mini App to start earning now!`;
     await postCall("setMyShortDescription", { short_description: enShort, language_code: "en" });
     await postCall("setMyDescription", { description: enDesc, language_code: "en" });
-
-    const cfg = await getServerConfigWithDefaults();
-    const activeAppName = String(cfg.appName || APP_NAME).trim();
-    const activeMiniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
 
     // 4. Set Mini App Menu Button
     if (activeMiniUrl && activeMiniUrl.startsWith("https://")) {
@@ -1395,6 +1395,7 @@ async function enforceBotProfile() {
     });
 
     const cfg = await getServerConfigWithDefaults();
+    const expectedAppName = String(cfg.appName || APP_NAME).trim();
     const expectedMiniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
 
     const [defShort, enShort, menuBtn] = await Promise.all([
@@ -1406,10 +1407,12 @@ async function enforceBotProfile() {
     const s1 = defShort?.result?.short_description || "";
     const s2 = enShort?.result?.short_description || "";
     const currentMenuUrl = String(menuBtn?.result?.web_app?.url || "").trim();
+    const currentMenuText = String(menuBtn?.result?.text || "").trim();
     const menuUrlMismatch = Boolean(expectedMiniUrl && expectedMiniUrl.startsWith("https://") && currentMenuUrl !== expectedMiniUrl);
+    const menuTextMismatch = currentMenuText !== `🚀 Open ${expectedAppName}`;
 
-    if (s1.includes("chatprovider") || s2.includes("chatprovider") || !s1.includes(APP_NAME) || !s2.includes(APP_NAME) || menuUrlMismatch) {
-      console.log(`[Bot Security] Profile or Menu URL mismatch detected! Syncing official ${APP_NAME} profile & menu button...`);
+    if (s1.includes("chatprovider") || s2.includes("chatprovider") || !s1.includes(expectedAppName) || !s2.includes(expectedAppName) || menuUrlMismatch || menuTextMismatch) {
+      console.log(`[Bot Security] Profile or Menu mismatch detected! Syncing official ${expectedAppName} profile & menu button...`);
       await syncOfficialBotBio();
     }
   } catch (e) {
