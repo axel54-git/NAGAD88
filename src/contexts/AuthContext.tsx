@@ -207,7 +207,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: "tg_user"
       };
 
-      const user = await loginOrRegisterUser(userToRegister, refStartParam, initData);
+      let user: User;
+      try {
+        user = await loginOrRegisterUser(userToRegister, refStartParam, initData);
+      } catch (firstErr: any) {
+        const firstCode = String(firstErr?.message || "");
+        if (firstCode.startsWith("api_405") || firstCode.startsWith("api_404") || firstCode === "api_html_no_backend" || firstCode.startsWith("server_env_missing:")) {
+          throw firstErr;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+        user = await loginOrRegisterUser(userToRegister, refStartParam, initData);
+      }
+
       if (user.banned) {
         setStatus('error');
         setError('Your account is banned. Contact support for assistance.');
@@ -232,11 +243,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       if (!hasExistingSession) {
+        const code = String(err?.message || "");
         setStatus('error');
-        setError('Authentication failed. Please try again.');
+        if (code.startsWith("api_405") || code.startsWith("api_404") || code === "api_html_no_backend") {
+          setError('সার্ভার API সংযোগ পাওয়া যায়নি। Cloudflare Workers-এ নতুন কোড ও এনভায়রনমেন্ট সেটআপ করে পুনরায় ডিপ্লয় করুন।');
+        } else if (code.startsWith("server_env_missing:")) {
+          setError(`সার্ভার সেটআপ অসম্পূর্ণ (${code.split(":")[1]})। Cloudflare Workers Settings-এ ভেরিয়েবলগুলো যোগ করুন।`);
+        } else if (code === "invalid_telegram_init_data" || code === "telegram_init_data_required") {
+          setError('টেলিগ্রাম সেশন ভেরিফাই হয়নি। অনুগ্রহ করে বটের মেনু বাটন থেকে আবার অ্যাপটি খুলুন।');
+        } else {
+          setError('Authentication failed. Please try again.');
+        }
       }
     }
   }, [config.allowDemoLogin, sessionTid, db.users]);

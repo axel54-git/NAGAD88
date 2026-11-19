@@ -350,6 +350,13 @@ export async function authSessionApi(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    if (res.status === 405 || res.status === 404) {
+      return { ok: false, error: `api_${res.status}_no_backend` };
+    }
+    return { ok: false, error: "api_html_no_backend" };
+  }
   const data = await res.json().catch(() => ({ ok: false, error: "auth_failed" }));
   if (data.ok && data.userToken) {
     setUserToken(data.userToken);

@@ -16,7 +16,7 @@ import taskBannerSocial from '../assets/images/task_banner_social_1794671746187.
 export const defaultConfig: AppConfig = {
   appName: "ManeiShopBD",
   botUsername: "Nadag88Bot",
-  miniAppUrl: typeof window !== 'undefined' ? `${window.location.origin}/` : "",
+  miniAppUrl: "https://nagad88.apk5y.workers.dev/",
   supportUrl: "https://t.me/ManeiShopBD_Site",
   imgbbApiKey: "",
   allowDemoLogin: true,
@@ -314,7 +314,7 @@ export async function sendTelegramBotMessage(
 }
 
 export async function syncBotMenuButton(miniAppUrl?: string): Promise<boolean> {
-  const url = miniAppUrl || (typeof window !== 'undefined' ? `${window.location.origin}/` : "");
+  const url = miniAppUrl || defaultConfig.miniAppUrl || (typeof window !== 'undefined' ? `${window.location.origin}/` : "");
   try {
     const res = await adminFetch("/api/set-menu-button", {
       method: "POST",

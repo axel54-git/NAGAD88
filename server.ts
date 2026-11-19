@@ -30,7 +30,8 @@ const PORT = 3000;
 const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
 const BOT_USERNAME = (process.env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
 const APP_NAME = (process.env.APP_NAME || "Nadag88").trim();
-const MINI_APP_URL = (process.env.MINI_APP_URL || process.env.APP_URL || "").trim();
+const DEFAULT_MINI_APP_URL = "https://nagad88.apk5y.workers.dev/";
+const MINI_APP_URL = (process.env.MINI_APP_URL || DEFAULT_MINI_APP_URL || process.env.APP_URL || "").trim();
 const DEFAULT_ADMIN_PIN_HASH = "48e6f958531e543731746fd0a4fcba173e2ae226d60eb19a5d021be3c29f7a3e";
 
 const SERVER_DEFAULT_CHANNELS = [
@@ -1174,14 +1175,15 @@ app.post("/api/notify-referral", requireAdmin, async (req, res) => {
     console.log(`[Referral Event] Genuinely New User: ${cleanUserName} (${cleanNewUserId}), Referrer: ${cleanRefId}`);
 
     const now = new Date().toISOString();
-    const miniUrl = MINI_APP_URL || process.env.APP_URL || "";
+    const cfg = await getServerConfigWithDefaults();
+    const activeAppName = String(cfg.appName || APP_NAME).trim();
+    const miniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
+    const openMarkup = buildWebAppMarkup(miniUrl, `🚀 Open ${activeAppName} App`);
 
     // 1. Send welcome message to brand new user
     if (cleanNewUserId && /^\d+$/.test(cleanNewUserId) && cleanNewUserId !== "724910385") {
       const welcomeText = `🎉 <b>স্বাগতম ${cleanUserName}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$0.01 USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>বর্তমান ব্যালেন্স:</b> $0.01 USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$0.50 USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $5.00 USDT\n\n🚀 এখনই কাজ শুরু করতে নিচের বাটনে চাপুন!`;
-      await sendTelegramMessage(cleanNewUserId, welcomeText, miniUrl ? {
-        inline_keyboard: [[{ text: `🚀 Open ${APP_NAME} App`, web_app: { url: miniUrl } }]]
-      } : undefined);
+      await sendTelegramMessage(cleanNewUserId, welcomeText, openMarkup);
     }
 
     // 2. If valid referrer exists, credit them and send Telegram message
@@ -1216,9 +1218,7 @@ app.post("/api/notify-referral", requireAdmin, async (req, res) => {
 
       // Send telegram message to referrer
       const referrerText = `🎉 <b>নতুন রেফারেল যুক্ত হয়েছে!</b>\n\n👤 <b>নতুন সদস্য:</b> ${cleanUserName}\n📊 <b>আপনার বর্তমান রেফারেল:</b> ${parentCount} জন\n💰 <b>রেফারেল বোনাস:</b> +$${currentRefBonus.toFixed(2)} USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${parentBalance.toFixed(2)} USDT\n🎯 <b>উইথড্র রিকোয়ারমেন্ট:</b> ${parentCount}/15 জন`;
-      await sendTelegramMessage(cleanRefId, referrerText, {
-        inline_keyboard: [[{ text: "🚀 Open ManeiShop App", web_app: { url: miniUrl } }]]
-      });
+      await sendTelegramMessage(cleanRefId, referrerText, openMarkup);
 
       // 3. Level 2 Grandparent check
       if (parent && parent.referredBy && parent.referredBy !== cleanRefId && parent.referredBy !== cleanNewUserId) {
@@ -1244,9 +1244,7 @@ app.post("/api/notify-referral", requireAdmin, async (req, res) => {
           await sendTelegramMessage(
             parent.referredBy,
             `🌟 <b>লেভেল ২ টিম মেম্বার যুক্ত হয়েছে!</b>\n\n📊 <b>লেভেল ২ টিম সাইজ:</b> ${grandParent.level2Count} জন\n💰 <b>লেভেল ২ বোনাস:</b> +$0.10 USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${grandParent.balance.toFixed(2)} USDT`,
-            {
-              inline_keyboard: [[{ text: "🚀 Open ManeiShop App", web_app: { url: miniUrl } }]]
-            }
+            openMarkup
           );
         }
       }
@@ -1260,7 +1258,9 @@ app.post("/api/notify-referral", requireAdmin, async (req, res) => {
 });
 
 app.post("/api/set-menu-button", requireAdmin, async (req, res) => {
-  const url = req.body?.url || MINI_APP_URL || process.env.APP_URL || "";
+  const cfg = await getServerConfigWithDefaults();
+  const url = String(req.body?.url || cfg.miniAppUrl || MINI_APP_URL || "").trim();
+  const appLabel = String(cfg.appName || APP_NAME).trim();
   if (!BOT_TOKEN || !url) {
     return res.json({ ok: false });
   }
@@ -1268,7 +1268,7 @@ app.post("/api/set-menu-button", requireAdmin, async (req, res) => {
     const payload = JSON.stringify({
       menu_button: {
         type: "web_app",
-        text: APP_NAME,
+        text: `🚀 Open ${appLabel}`,
         web_app: { url }
       }
     });
@@ -1357,18 +1357,22 @@ async function syncOfficialBotBio(): Promise<boolean> {
     await postCall("setMyShortDescription", { short_description: enShort, language_code: "en" });
     await postCall("setMyDescription", { description: enDesc, language_code: "en" });
 
+    const cfg = await getServerConfigWithDefaults();
+    const activeAppName = String(cfg.appName || APP_NAME).trim();
+    const activeMiniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
+
     // 4. Set Mini App Menu Button
-    if (MINI_APP_URL) {
+    if (activeMiniUrl && activeMiniUrl.startsWith("https://")) {
       await postCall("setChatMenuButton", {
         menu_button: {
           type: "web_app",
-          text: `🚀 Open ${APP_NAME}`,
-          web_app: { url: MINI_APP_URL }
+          text: `🚀 Open ${activeAppName}`,
+          web_app: { url: activeMiniUrl }
         }
       });
     }
 
-    console.log(`[Bot Security] Official ${APP_NAME} (@${BOT_USERNAME}) bio, description & menu button enforced successfully.`);
+    console.log(`[Bot Security] Official ${activeAppName} (@${BOT_USERNAME}) bio, description & menu button (${activeMiniUrl}) enforced successfully.`);
     return true;
   } catch (err) {
     console.warn("[Bot Security] syncOfficialBotBio error:", err);
@@ -1380,7 +1384,8 @@ async function enforceBotProfile() {
   if (!BOT_TOKEN) return;
   try {
     const fetchApi = (method: string, lang = "") => new Promise<any>((resolve) => {
-      https.get(`https://api.telegram.org/bot${BOT_TOKEN}/${method}?language_code=${lang}`, (res) => {
+      const qs = lang ? `?language_code=${encodeURIComponent(lang)}` : "";
+      https.get(`https://api.telegram.org/bot${BOT_TOKEN}/${method}${qs}`, (res) => {
         let d = "";
         res.on("data", (c) => (d += c));
         res.on("end", () => {
@@ -1389,16 +1394,22 @@ async function enforceBotProfile() {
       }).on("error", () => resolve({}));
     });
 
-    const [defShort, enShort] = await Promise.all([
+    const cfg = await getServerConfigWithDefaults();
+    const expectedMiniUrl = String(cfg.miniAppUrl || MINI_APP_URL || "").trim();
+
+    const [defShort, enShort, menuBtn] = await Promise.all([
       fetchApi("getMyShortDescription"),
-      fetchApi("getMyShortDescription", "en")
+      fetchApi("getMyShortDescription", "en"),
+      fetchApi("getChatMenuButton")
     ]);
 
     const s1 = defShort?.result?.short_description || "";
     const s2 = enShort?.result?.short_description || "";
+    const currentMenuUrl = String(menuBtn?.result?.web_app?.url || "").trim();
+    const menuUrlMismatch = Boolean(expectedMiniUrl && expectedMiniUrl.startsWith("https://") && currentMenuUrl !== expectedMiniUrl);
 
-    if (s1.includes("chatprovider") || s2.includes("chatprovider") || !s1.includes(APP_NAME) || !s2.includes(APP_NAME)) {
-      console.log(`[Bot Security] Spam or mismatch detected in bot bio! Purging and locking official ${APP_NAME} bio...`);
+    if (s1.includes("chatprovider") || s2.includes("chatprovider") || !s1.includes(APP_NAME) || !s2.includes(APP_NAME) || menuUrlMismatch) {
+      console.log(`[Bot Security] Profile or Menu URL mismatch detected! Syncing official ${APP_NAME} profile & menu button...`);
       await syncOfficialBotBio();
     }
   } catch (e) {
@@ -1560,6 +1571,7 @@ app.post("/api/auth/session", async (req, res) => {
       }
       user.lastLogin = nowIso;
       user.updatedAt = Date.now();
+      await putFirebase(`users/${tid}`, user);
 
       if (!user.welcomeSent && !isDemo && /^\d+$/.test(tid)) {
         const welcomeMsg = buildWelcomeMessageText({
@@ -1569,15 +1581,16 @@ app.post("/api/auth/session", async (req, res) => {
           referralBonus: l1Bonus,
           minWithdraw
         });
-        welcomeDelivered = await sendTelegramMessage(tid, welcomeMsg, openAppMarkup);
-        if (welcomeDelivered) {
-          user.welcomeSent = true;
-        }
+        sendTelegramMessage(tid, welcomeMsg, openAppMarkup)
+          .then((delivered) => {
+            if (delivered) {
+              patchFirebaseItem(`users/${tid}`, { welcomeSent: true }).catch(() => {});
+            }
+          })
+          .catch(() => {});
       } else {
         welcomeDelivered = Boolean(user.welcomeSent);
       }
-
-      await putFirebase(`users/${tid}`, user);
     } else {
       isBrandNewUser = true;
       user = {
@@ -1609,103 +1622,104 @@ app.post("/api/auth/session", async (req, res) => {
       };
       await putFirebase(`users/${tid}`, user);
 
-      if (wb > 0) {
-        const wbLogId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        await putFirebase(`logs/${wbLogId}`, {
-          id: wbLogId,
-          telegramId: tid,
-          kind: "task",
-          label: "🎁 সাইনআপ ওয়েলকাম বোনাস",
-          amount: Number(wb.toFixed(2)),
-          createdAt: nowIso
-        });
-      }
+      // Dispatch welcome log, Telegram Welcome PM, and L1/L2 referral bonuses asynchronously so account creation finishes instantly
+      (async () => {
+        if (wb > 0) {
+          const wbLogId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          putFirebase(`logs/${wbLogId}`, {
+            id: wbLogId,
+            telegramId: tid,
+            kind: "task",
+            label: "🎁 সাইনআপ ওয়েলকাম বোনাস",
+            amount: Number(wb.toFixed(2)),
+            createdAt: nowIso
+          }).catch(() => {});
+        }
 
-      const welcomePromise =
-        !isDemo && /^\d+$/.test(tid)
-          ? sendTelegramMessage(
-              tid,
-              buildWelcomeMessageText({
-                firstName: user.firstName,
-                welcomeBonus: wb,
-                balance: Number(user.balance),
-                referralBonus: l1Bonus,
-                minWithdraw
-              }),
-              openAppMarkup
-            )
-          : Promise.resolve(true);
+        if (!isDemo && /^\d+$/.test(tid)) {
+          sendTelegramMessage(
+            tid,
+            buildWelcomeMessageText({
+              firstName: user.firstName,
+              welcomeBonus: wb,
+              balance: Number(user.balance),
+              referralBonus: l1Bonus,
+              minWithdraw
+            }),
+            openAppMarkup
+          )
+            .then((delivered) => {
+              if (delivered) {
+                patchFirebaseItem(`users/${tid}`, { welcomeSent: true }).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
 
-      // Process L1 & L2 referral bonus atomically ONCE on brand new registration
-      const refNotifyPromises: Promise<boolean>[] = [];
-      if (cleanReferrer && cleanReferrer !== tid && !isDemo) {
-        const existingRefs = (await fetchFirebase<Record<string, any>>("referrals")) || {};
-        const alreadyRef = Object.values(existingRefs).some((r: any) => r?.referredTelegramId === tid);
+        if (cleanReferrer && cleanReferrer !== tid && !isDemo) {
+          try {
+            const existingRefs = (await fetchFirebase<Record<string, any>>("referrals")) || {};
+            const alreadyRef = Object.values(existingRefs).some((r: any) => r?.referredTelegramId === tid);
 
-        if (!alreadyRef) {
-          const parent = await fetchFirebase<any>(`users/${cleanReferrer}`);
-          if (parent && parent.telegramId) {
-            parent.referralCount = (Number(parent.referralCount) || 0) + 1;
-            parent.balance = Number(((Number(parent.balance) || 0) + l1Bonus).toFixed(2));
-            parent.lifetimeEarned = Number(((Number(parent.lifetimeEarned) || 0) + l1Bonus).toFixed(2));
-            parent.referralEarned = Number(((Number(parent.referralEarned) || 0) + l1Bonus).toFixed(2));
-            parent.updatedAt = Date.now();
-            await putFirebase(`users/${cleanReferrer}`, parent);
+            if (!alreadyRef) {
+              const parent = await fetchFirebase<any>(`users/${cleanReferrer}`);
+              if (parent && parent.telegramId) {
+                parent.referralCount = (Number(parent.referralCount) || 0) + 1;
+                parent.balance = Number(((Number(parent.balance) || 0) + l1Bonus).toFixed(2));
+                parent.lifetimeEarned = Number(((Number(parent.lifetimeEarned) || 0) + l1Bonus).toFixed(2));
+                parent.referralEarned = Number(((Number(parent.referralEarned) || 0) + l1Bonus).toFixed(2));
+                parent.updatedAt = Date.now();
+                await putFirebase(`users/${cleanReferrer}`, parent);
 
-            const refId = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            await putFirebase(`referrals/${refId}`, {
-              id: refId,
-              referrerTelegramId: cleanReferrer,
-              referredTelegramId: tid,
-              level: 1,
-              bonus: l1Bonus,
-              createdAt: nowIso
-            });
-
-            const minRefs = Number(cfg.minReferralsForWithdraw ?? 15);
-            const referrerText = `🎉 <b>নতুন রেফারেল যুক্ত হয়েছে!</b>\n\n👤 <b>নতুন সদস্য:</b> ${sanitizeHtml(displayName)}\n📊 <b>আপনার বর্তমান রেফারেল:</b> ${parent.referralCount} জন\n💰 <b>রেফারেল বোনাস:</b> +$${l1Bonus.toFixed(2)} USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${parent.balance.toFixed(2)} USDT\n🎯 <b>উইথড্র রিকোয়ারমেন্ট:</b> ${parent.referralCount}/${minRefs} জন`;
-            refNotifyPromises.push(sendTelegramMessage(cleanReferrer, referrerText, openAppMarkup));
-
-            if (parent.referredBy && parent.referredBy !== cleanReferrer && parent.referredBy !== tid) {
-              const l2Bonus = Number(cfg.level2Bonus ?? 0.1);
-              const grandParent = await fetchFirebase<any>(`users/${parent.referredBy}`);
-              if (grandParent && grandParent.telegramId) {
-                grandParent.level2Count = (Number(grandParent.level2Count) || 0) + 1;
-                grandParent.balance = Number(((Number(grandParent.balance) || 0) + l2Bonus).toFixed(2));
-                grandParent.lifetimeEarned = Number(((Number(grandParent.lifetimeEarned) || 0) + l2Bonus).toFixed(2));
-                grandParent.referralEarned = Number(((Number(grandParent.referralEarned) || 0) + l2Bonus).toFixed(2));
-                grandParent.updatedAt = Date.now();
-                await putFirebase(`users/${parent.referredBy}`, grandParent);
-
-                const gRefId = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                await putFirebase(`referrals/${gRefId}`, {
-                  id: gRefId,
-                  referrerTelegramId: parent.referredBy,
+                const refId = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                await putFirebase(`referrals/${refId}`, {
+                  id: refId,
+                  referrerTelegramId: cleanReferrer,
                   referredTelegramId: tid,
-                  level: 2,
-                  bonus: l2Bonus,
+                  level: 1,
+                  bonus: l1Bonus,
                   createdAt: nowIso
                 });
 
-                refNotifyPromises.push(
-                  sendTelegramMessage(
-                    parent.referredBy,
-                    `🌟 <b>লেভেল ২ টিম মেম্বার যুক্ত হয়েছে!</b>\n\n📊 <b>লেভেল ২ টিম সাইজ:</b> ${grandParent.level2Count} জন\n💰 <b>লেভেল ২ বোনাস:</b> +$${l2Bonus.toFixed(2)} USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${grandParent.balance.toFixed(2)} USDT`,
-                    openAppMarkup
-                  )
-                );
+                const minRefs = Number(cfg.minReferralsForWithdraw ?? 15);
+                const referrerText = `🎉 <b>নতুন রেফারেল যুক্ত হয়েছে!</b>\n\n👤 <b>নতুন সদস্য:</b> ${sanitizeHtml(displayName)}\n📊 <b>আপনার বর্তমান রেফারেল:</b> ${parent.referralCount} জন\n💰 <b>রেফারেল বোনাস:</b> +$${l1Bonus.toFixed(2)} USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${parent.balance.toFixed(2)} USDT\n🎯 <b>উইথড্র রিকোয়ারমেন্ট:</b> ${parent.referralCount}/${minRefs} জন`;
+                sendTelegramMessage(cleanReferrer, referrerText, openAppMarkup).catch(() => {});
+
+                if (parent.referredBy && parent.referredBy !== cleanReferrer && parent.referredBy !== tid) {
+                  const l2Bonus = Number(cfg.level2Bonus ?? 0.1);
+                  const grandParent = await fetchFirebase<any>(`users/${parent.referredBy}`);
+                  if (grandParent && grandParent.telegramId) {
+                    grandParent.level2Count = (Number(grandParent.level2Count) || 0) + 1;
+                    grandParent.balance = Number(((Number(grandParent.balance) || 0) + l2Bonus).toFixed(2));
+                    grandParent.lifetimeEarned = Number(((Number(grandParent.lifetimeEarned) || 0) + l2Bonus).toFixed(2));
+                    grandParent.referralEarned = Number(((Number(grandParent.referralEarned) || 0) + l2Bonus).toFixed(2));
+                    grandParent.updatedAt = Date.now();
+                    await putFirebase(`users/${parent.referredBy}`, grandParent);
+
+                    const gRefId = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                    await putFirebase(`referrals/${gRefId}`, {
+                      id: gRefId,
+                      referrerTelegramId: parent.referredBy,
+                      referredTelegramId: tid,
+                      level: 2,
+                      bonus: l2Bonus,
+                      createdAt: nowIso
+                    });
+
+                    sendTelegramMessage(
+                      parent.referredBy,
+                      `🌟 <b>লেভেল ২ টিম মেম্বার যুক্ত হয়েছে!</b>\n\n📊 <b>লেভেল ২ টিম সাইজ:</b> ${grandParent.level2Count} জন\n💰 <b>লেভেল ২ বোনাস:</b> +$${l2Bonus.toFixed(2)} USDT\n💵 <b>বর্তমান ব্যালেন্স:</b> $${grandParent.balance.toFixed(2)} USDT`,
+                      openAppMarkup
+                    ).catch(() => {});
+                  }
+                }
               }
             }
+          } catch (refErr) {
+            console.warn("[Auth Session Background Referral Error]:", refErr);
           }
         }
-      }
-
-      const [wDelivered] = await Promise.all([welcomePromise, ...refNotifyPromises]);
-      welcomeDelivered = Boolean(wDelivered);
-      if (welcomeDelivered && !isDemo) {
-        user.welcomeSent = true;
-        await patchFirebaseItem(`users/${tid}`, { welcomeSent: true });
-      }
+      })().catch(() => {});
     }
 
     const userToken = signAuthToken({
@@ -1713,7 +1727,6 @@ app.post("/api/auth/session", async (req, res) => {
       tid,
       exp: Date.now() + 7 * 24 * 60 * 60 * 1000
     });
-
     return res.json({ ok: true, user, userToken, isBrandNewUser, welcomeDelivered });
   } catch (err: any) {
     console.warn("[Auth Session Error]:", err);
@@ -2581,6 +2594,9 @@ app.put("/api/rtdb/config", requireAdmin, async (req, res) => {
     next.imgbbApiKey = current.imgbbApiKey || "";
   }
   const ok = await putFirebase("config", next);
+  if (ok && next.miniAppUrl && String(next.miniAppUrl).startsWith("https://")) {
+    syncOfficialBotBio().catch(() => {});
+  }
   res.json({ ok });
 });
 
