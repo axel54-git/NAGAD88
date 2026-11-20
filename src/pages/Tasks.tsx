@@ -65,11 +65,9 @@ export function Tasks() {
                             }}
                           />
 
-                          {/* Gold Play Button Overlay */}
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/15">
-                            <div className="luxury-btn-gold flex h-9 w-9 items-center justify-center rounded-full shadow-md transition-transform duration-200 group-hover:scale-110">
-                              <Play className="h-4 w-4 fill-[#1c0e05] text-[#1c0e05] ml-0.5" />
-                            </div>
+                          {/* Clean Play Icon without background */}
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <Play className="h-8 w-8 fill-white/95 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] transition-transform duration-200 group-hover:scale-110" />
                           </div>
                         </div>
 
