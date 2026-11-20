@@ -470,6 +470,19 @@ function buildWelcomeMessageText(params: {
   return `🎉 <b>স্বাগতম ${sanitizeHtml(params.firstName)}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${params.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>আপনার বর্তমান ব্যালেন্স আছে:</b> $${params.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${params.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${params.minWithdraw} USDT\n\n🚀 <b>কাজ শুরু করতে নিচের বাটনে চাপুন!</b>`;
 }
 
+function buildChannelVerifiedMessageText(params: {
+  firstName: string;
+  balance: number;
+  referralCount: number;
+  botUsername: string;
+  tid: string;
+}): string {
+  const safeName = sanitizeHtml(params.firstName || "ইউজার");
+  const cleanBot = String(params.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+  const refLink = `https://t.me/${cleanBot}?startapp=${params.tid}`;
+  return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${params.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
+}
+
 // Handle an incoming Telegram message (from polling or webhook)
 async function handleTelegramMessage(message: any) {
   if (!message || !message.chat || message.chat.type !== "private" || message.from?.is_bot) return;
@@ -678,8 +691,14 @@ async function handleTelegramCallbackQuery(query: any) {
       await answerCallbackQuery(callbackId, "🎉 অভিনন্দন! চ্যানেল ভেরিফিকেশন সফল হয়েছে!", true);
 
       const user = await fetchFirebase<any>(`users/${chatId}`);
-      const bal = Number(user?.balance || 0).toFixed(2);
-      const successText = `🎉 <b>অভিনন্দন ${sanitizeHtml(firstName)}!</b>\n\n✅ <b>আপনার চ্যানেল ভেরিফিকেশন সফল হয়েছে!</b>\n💵 <b>আপনার বর্তমান ব্যালেন্স আছে:</b> $${bal} USDT\n\n🚀 নিচের বাটনে ক্লিক করে অ্যাপ ওপেন করুন:`;
+      const botUser = String(cfg.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const successText = buildChannelVerifiedMessageText({
+        firstName: user?.firstName || firstName,
+        balance: Number(user?.balance || 0),
+        referralCount: Number(user?.referralCount || 0),
+        botUsername: botUser,
+        tid: chatId
+      });
 
       await sendTelegramMessage(chatId, successText, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`));
     } else {
@@ -714,6 +733,29 @@ async function clearTelegramWebhookForPolling(): Promise<void> {
 
 async function startTelegramPolling() {
   if (isPolling || !BOT_TOKEN) return;
+
+  // If an external Cloudflare Worker is live and healthy at MINI_APP_URL, prefer 24/7 Worker webhook instead of competing polling
+  try {
+    const cfg = await getServerConfigWithDefaults();
+    const targetBase = String(cfg.miniAppUrl || MINI_APP_URL || DEFAULT_MINI_APP_URL).trim().replace(/\/+$/, "");
+    if (targetBase.startsWith("https://") && !targetBase.includes(".run.app")) {
+      const healthRes = await fetch(`${targetBase}/api/health`).then((r) => r.json()).catch(() => null);
+      if (healthRes && healthRes.ok === true) {
+        const webhookUrl = `${targetBase}/api/telegram-webhook`;
+        const info = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`).then((r) => r.json()).catch(() => null);
+        if (info?.result?.url !== webhookUrl) {
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"] })
+          }).catch(() => {});
+        }
+        console.log(`[Telegram Webhook] External Cloudflare Worker is live; using 24/7 webhook: ${webhookUrl}`);
+        return;
+      }
+    }
+  } catch {}
+
   isPolling = true;
   await clearTelegramWebhookForPolling();
   console.log("[Telegram Polling] Starting 24/7 background Telegram bot polling...");
@@ -1883,7 +1925,22 @@ app.post("/api/verify-channels", requireUser, async (req, res) => {
       }
     }
 
+    const wasVerified = Boolean(user.verified);
     await patchFirebaseItem(`users/${tid}`, { verified: allMembers });
+
+    if (allMembers && !isDemo && /^\d+$/.test(tid) && (isManualClick || !wasVerified)) {
+      const appTitle = String(cfg.appName || APP_NAME).trim() || APP_NAME;
+      const miniUrl = String(cfg.miniAppUrl || MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
+      const botUser = String(cfg.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const verifyMsg = buildChannelVerifiedMessageText({
+        firstName: user.firstName || "ইউজার",
+        balance: Number(user.balance || 0),
+        referralCount: Number(user.referralCount || 0),
+        botUsername: botUser,
+        tid
+      });
+      sendTelegramMessage(tid, verifyMsg, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`)).catch(() => {});
+    }
 
     return res.json({
       ok: true,

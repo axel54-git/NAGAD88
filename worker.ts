@@ -424,6 +424,13 @@ function buildWelcomeMessageText(opts: { firstName: string; welcomeBonus: number
   return `🎉 <b>স্বাগতম ${safeName}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${opts.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>বর্তমান ব্যালেন্স:</b> $${opts.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${opts.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${opts.minWithdraw.toFixed(2)} USDT\n\n🚀 এখনই কাজ শুরু করতে নিচের বাটনে চাপুন!`;
 }
 
+function buildChannelVerifiedMessageText(opts: { firstName: string; balance: number; referralCount: number; botUsername: string; tid: string }): string {
+  const safeName = sanitizeHtml(opts.firstName || "ইউজার");
+  const cleanBot = String(opts.botUsername || "Nadag88Bot").trim().replace(/^@/, "");
+  const refLink = `https://t.me/${cleanBot}?startapp=${opts.tid}`;
+  return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${opts.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${opts.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
+}
+
 async function sendTelegramMessage(env: WorkerEnv, chatId: string | number, text: string, replyMarkup?: any): Promise<boolean> {
   const botToken = (env.BOT_TOKEN || "").trim();
   if (!botToken || !chatId) return false;
@@ -714,8 +721,14 @@ async function handleTelegramCallbackQuery(env: WorkerEnv, query: any) {
       await patchFirebaseItem(env, `users/${chatId}`, { verified: true });
       await answerCallbackQuery(env, callbackId, "🎉 অভিনন্দন! চ্যানেল ভেরিফিকেশন সফল হয়েছে!", true);
       const user = await fetchFirebase<any>(env, `users/${chatId}`);
-      const bal = Number(user?.balance || 0).toFixed(2);
-      const successText = `🎉 <b>অভিনন্দন ${sanitizeHtml(firstName)}!</b>\n\n✅ <b>আপনার চ্যানেল ভেরিফিকেশন সফল হয়েছে!</b>\n💵 <b>আপনার বর্তমান ব্যালেন্স আছে:</b> $${bal} USDT\n\n🚀 নিচের বাটনে ক্লিক করে অ্যাপ ওপেন করুন:`;
+      const botUser = String(cfg.botUsername || env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const successText = buildChannelVerifiedMessageText({
+        firstName: user?.firstName || firstName,
+        balance: Number(user?.balance || 0),
+        referralCount: Number(user?.referralCount || 0),
+        botUsername: botUser,
+        tid: chatId
+      });
       await sendTelegramMessage(env, chatId, successText, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`));
     } else {
       await answerCallbackQuery(env, callbackId, `⚠️ আপনি এখনো ${missingChannels.join(" ও ")} এ জয়েন করেননি! দয়া করে আগে জয়েন করুন।`, true);
@@ -1066,7 +1079,23 @@ export default {
             missingNames.push(ch.name || ch.username);
           }
         }
+        const wasVerified = Boolean(user.verified);
         await patchFirebaseItem(env, `users/${tid}`, { verified: allMembers });
+
+        if (allMembers && !isDemo && /^\d+$/.test(tid) && (isManualClick || !wasVerified)) {
+          const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
+          const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
+          const botUser = String(cfg.botUsername || env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+          const verifyMsg = buildChannelVerifiedMessageText({
+            firstName: user.firstName || "ইউজার",
+            balance: Number(user.balance || 0),
+            referralCount: Number(user.referralCount || 0),
+            botUsername: botUser,
+            tid
+          });
+          ctx.waitUntil(sendTelegramMessage(env, tid, verifyMsg, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`)).catch(() => {}));
+        }
+
         return json({ ok: true, verified: allMembers, joinedMap, missingNames, adminNotice });
       }
 
