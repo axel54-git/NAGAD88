@@ -467,7 +467,7 @@ function buildWelcomeMessageText(params: {
   referralBonus: number;
   minWithdraw: number;
 }): string {
-  return `🎉 <b>স্বাগতম ${sanitizeHtml(params.firstName)}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${params.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>আপনার বর্তমান ব্যালেন্স আছে:</b> $${params.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${params.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${params.minWithdraw} USDT\n\n🚀 <b>কাজ শুরু করতে নিচের বাটনে চাপুন!</b>`;
+  return `🎉 <b>স্বাগতম ${sanitizeHtml(params.firstName)}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${params.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${params.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${params.minWithdraw.toFixed(2)} USDT\n\n🚀 এখনই কাজ শুরু করতে নিচের বাটনে চাপুন!`;
 }
 
 function buildChannelVerifiedMessageText(params: {
@@ -479,8 +479,29 @@ function buildChannelVerifiedMessageText(params: {
 }): string {
   const safeName = sanitizeHtml(params.firstName || "ইউজার");
   const cleanBot = String(params.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
-  const refLink = `https://t.me/${cleanBot}?startapp=${params.tid}`;
+  const refLink = `https://t.me/${cleanBot}?start=ref_${params.tid}`;
   return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${params.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
+}
+
+const welcomeInFlight = new Set<string>();
+async function sendWelcomeMessageOnce(
+  tid: string,
+  params: { firstName: string; welcomeBonus: number; balance: number; referralBonus: number; minWithdraw: number },
+  replyMarkup?: any
+): Promise<boolean> {
+  if (!tid || welcomeInFlight.has(tid)) return false;
+  welcomeInFlight.add(tid);
+  try {
+    const latest = await fetchFirebase<any>(`users/${tid}`);
+    if (latest?.welcomeSent) return true;
+    const delivered = await sendTelegramMessage(tid, buildWelcomeMessageText(params), replyMarkup);
+    if (delivered) {
+      await patchFirebaseItem(`users/${tid}`, { welcomeSent: true });
+    }
+    return delivered;
+  } finally {
+    welcomeInFlight.delete(tid);
+  }
 }
 
 // Handle an incoming Telegram message (from polling or webhook)
@@ -1652,20 +1673,17 @@ app.post("/api/auth/session", async (req, res) => {
       await putFirebase(`users/${tid}`, user);
 
       if (!user.welcomeSent && !isDemo && /^\d+$/.test(tid)) {
-        const welcomeMsg = buildWelcomeMessageText({
-          firstName: user.firstName,
-          welcomeBonus: wb,
-          balance: Number(user.balance || 0),
-          referralBonus: l1Bonus,
-          minWithdraw
-        });
-        sendTelegramMessage(tid, welcomeMsg, openAppMarkup)
-          .then((delivered) => {
-            if (delivered) {
-              patchFirebaseItem(`users/${tid}`, { welcomeSent: true }).catch(() => {});
-            }
-          })
-          .catch(() => {});
+        sendWelcomeMessageOnce(
+          tid,
+          {
+            firstName: user.firstName,
+            welcomeBonus: wb,
+            balance: Number(user.balance || 0),
+            referralBonus: l1Bonus,
+            minWithdraw
+          },
+          openAppMarkup
+        ).catch(() => {});
       } else {
         welcomeDelivered = Boolean(user.welcomeSent);
       }
@@ -1715,23 +1733,17 @@ app.post("/api/auth/session", async (req, res) => {
         }
 
         if (!isDemo && /^\d+$/.test(tid)) {
-          sendTelegramMessage(
+          sendWelcomeMessageOnce(
             tid,
-            buildWelcomeMessageText({
+            {
               firstName: user.firstName,
               welcomeBonus: wb,
               balance: Number(user.balance),
               referralBonus: l1Bonus,
               minWithdraw
-            }),
+            },
             openAppMarkup
-          )
-            .then((delivered) => {
-              if (delivered) {
-                patchFirebaseItem(`users/${tid}`, { welcomeSent: true }).catch(() => {});
-              }
-            })
-            .catch(() => {});
+          ).catch(() => {});
         }
 
         if (cleanReferrer && cleanReferrer !== tid && !isDemo) {

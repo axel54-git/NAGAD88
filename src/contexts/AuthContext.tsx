@@ -16,8 +16,7 @@ import {
   subscribeAllWithdrawals,
   subscribeAllTaskSubmissions,
   verifyChannelsApi,
-  clearUserToken,
-  retryWelcomeApi
+  clearUserToken
 } from '../lib/firebase';
 import {
   initTelegramWebApp,
@@ -121,34 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const tg = await initTelegramWebApp();
     setInTelegram(!!tg);
 
-    let writeAccessGrantedPromise: Promise<boolean> | null = null;
-    // Request write access only if supported by Telegram WebApp version 6.9+
-    try {
-      if (
-        tg &&
-        typeof (tg as any).requestWriteAccess === 'function' &&
-        typeof tg.isVersionAtLeast === 'function' &&
-        tg.isVersionAtLeast('6.9')
-      ) {
-        writeAccessGrantedPromise = new Promise<boolean>((resolve) => {
-          let settled = false;
-          const done = (val: boolean) => {
-            if (!settled) {
-              settled = true;
-              resolve(val);
-            }
-          };
-          try {
-            (tg as any).requestWriteAccess((allowed: boolean) => {
-              done(Boolean(allowed));
-            });
-          } catch {
-            done(false);
-          }
-        });
-      }
-    } catch {}
-
     const initData = getTelegramInitData();
     const tgUser = getTelegramUser();
     const refStartParam = getReferralStartParam();
@@ -228,21 +199,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(STORAGE_TID, user.telegramId);
       setSessionTid(user.telegramId);
       setStatus('ready');
-
-      // If bot PM couldn't be sent yet (e.g. awaiting write access prompt), retry as soon as allowed
-      if (!user.welcomeSent && writeAccessGrantedPromise) {
-        writeAccessGrantedPromise.then((allowed) => {
-          if (allowed) {
-            retryWelcomeApi().then((res) => {
-              if (res.ok && res.user) {
-                appStore.update((draft) => {
-                  draft.users[res.user!.telegramId] = res.user!;
-                });
-              }
-            });
-          }
-        });
-      }
     } catch (err: any) {
       console.error(err);
       if (!hasExistingSession) {
