@@ -42,7 +42,17 @@ export function clearUserToken(): void {
 
 export function getAdminToken(): string {
   try {
-    return sessionStorage.getItem(ADMIN_TOKEN_KEY) || "";
+    const saved = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (saved) return saved;
+    const legacy = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (legacy) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, legacy);
+      localStorage.setItem("c2c_admin_ok", "1");
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+      sessionStorage.removeItem("c2c_admin_ok");
+      return legacy;
+    }
+    return "";
   } catch {
     return "";
   }
@@ -55,18 +65,22 @@ export function hasAdminToken(): boolean {
 export function setAdminToken(token: string): void {
   try {
     if (token) {
-      sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
-      sessionStorage.setItem("c2c_admin_ok", "1");
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+      localStorage.setItem("c2c_admin_ok", "1");
     } else {
-      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-      sessionStorage.removeItem("c2c_admin_ok");
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      localStorage.removeItem("c2c_admin_ok");
     }
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    sessionStorage.removeItem("c2c_admin_ok");
   } catch {}
   reconnectStream();
 }
 
 export function clearAdminToken(): void {
   try {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem("c2c_admin_ok");
     sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     sessionStorage.removeItem("c2c_admin_ok");
   } catch {}
@@ -300,18 +314,21 @@ export async function checkAdminSessionApi(): Promise<boolean> {
     const res = await fetch("/api/admin/session", {
       headers: getAuthHeaders()
     });
-    if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
       clearAdminToken();
       return false;
+    }
+    if (!res.ok) {
+      return true;
     }
     const data = await res.json().catch(() => ({ ok: false }));
-    if (!data.ok) {
+    if (data && data.error === "admin_unauthorized") {
       clearAdminToken();
       return false;
     }
-    return true;
+    return Boolean(data.ok ?? true);
   } catch {
-    return false;
+    return true;
   }
 }
 

@@ -1555,7 +1555,7 @@ app.post("/api/admin/login", async (req, res) => {
   adminPinFailures.delete(ip);
   const adminToken = signAuthToken({
     role: "admin",
-    exp: now + 12 * 60 * 60 * 1000
+    exp: now + 365 * 24 * 60 * 60 * 1000
   });
   return res.json({ ok: true, adminToken });
 });

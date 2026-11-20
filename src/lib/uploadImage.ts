@@ -116,7 +116,7 @@ export async function uploadProofImage(file: File, _imgbbApiKey?: string): Promi
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     try {
       const uTok = localStorage.getItem('c2c_user_token');
-      const aTok = sessionStorage.getItem('c2c_admin_token');
+      const aTok = localStorage.getItem('c2c_admin_token');
       if (uTok) headers['x-user-token'] = uTok;
       if (aTok) headers['x-admin-token'] = aTok;
     } catch {}

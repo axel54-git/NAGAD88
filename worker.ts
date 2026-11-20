@@ -1330,7 +1330,7 @@ export default {
         const expectedHash = String(cfg.adminPinHash || DEFAULT_ADMIN_PIN_HASH).toLowerCase();
         const enteredHash = (await sha256Hex(pin)).toLowerCase();
         if (!timingSafeCompare(enteredHash, expectedHash)) return json({ ok: false, error: "ভুল সিকিউরিটি পিন!" }, 401);
-        const adminToken = await signAuthToken(env, { role: "admin", exp: Date.now() + 12 * 60 * 60 * 1000 });
+        const adminToken = await signAuthToken(env, { role: "admin", exp: Date.now() + 365 * 24 * 60 * 60 * 1000 });
         return json({ ok: true, adminToken });
       }
 
