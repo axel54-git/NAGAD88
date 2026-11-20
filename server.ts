@@ -1441,6 +1441,23 @@ app.post("/api/bot/sync-profile", requireAdmin, async (req, res) => {
   res.json({ ok });
 });
 
+app.post("/api/bot/set-webhook", requireAdmin, async (req, res) => {
+  if (!BOT_TOKEN) return res.status(503).json({ ok: false, error: "missing_bot_token" });
+  const cfg = await getServerConfigWithDefaults();
+  const base = String(req.body?.url || cfg.miniAppUrl || MINI_APP_URL || DEFAULT_MINI_APP_URL).trim().replace(/\/+$/, "");
+  const webhookUrl = base.endsWith("/api/telegram-webhook") ? base : `${base}/api/telegram-webhook`;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"] })
+    });
+    res.json(await r.json().catch(() => ({ ok: false })));
+  } catch {
+    res.json({ ok: false });
+  }
+});
+
 // ==========================================
 // ADMIN AUTHENTICATION & SECURITY PIN ROUTES
 // ==========================================

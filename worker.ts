@@ -479,16 +479,62 @@ async function readJson(req: Request): Promise<any> {
   }
 }
 
+async function answerCallbackQuery(env: WorkerEnv, callbackQueryId: string, text?: string, showAlert = false): Promise<boolean> {
+  const botToken = (env.BOT_TOKEN || "").trim();
+  if (!botToken || !callbackQueryId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text: text || "", show_alert: showAlert })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function checkUserInTelegramChannel(env: WorkerEnv, usernameOrId: string, userId: string): Promise<boolean> {
+  const botToken = (env.BOT_TOKEN || "").trim();
+  if (!botToken || !usernameOrId || !userId) return false;
+  const clean = usernameOrId.replace(/^(https?:\/\/)?(www\.)?(t\.me\/|telegram\.me\/)/i, "").replace(/^@/, "").split("/")[0].split("?")[0].trim();
+  const targetChatId = clean.startsWith("-") || /^\d+$/.test(clean) ? clean : `@${clean}`;
+  try {
+    const parsed: any = await fetch(`https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(targetChatId)}&user_id=${encodeURIComponent(userId)}`).then((r) => r.json());
+    if (parsed.ok && parsed.result) {
+      const st = parsed.result.status;
+      return st === "creator" || st === "administrator" || st === "member" || st === "restricted";
+    }
+    if (String(parsed.description || "").includes("member list is inaccessible")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function checkAllRequiredChannels(env: WorkerEnv, chatId: string): Promise<{ allJoined: boolean; missingChannels: string[] }> {
+  const cfg = await getServerConfigWithDefaults(env);
+  const channels = Array.isArray(cfg.requiredChannels) && cfg.requiredChannels.length > 0 ? cfg.requiredChannels : SERVER_DEFAULT_CHANNELS;
+  const missingChannels: string[] = [];
+  for (const ch of channels) {
+    if (!ch?.username) continue;
+    const isMember = await checkUserInTelegramChannel(env, ch.username, chatId);
+    if (!isMember) missingChannels.push(ch.name || ch.username);
+  }
+  return { allJoined: missingChannels.length === 0, missingChannels };
+}
+
 async function handleTelegramMessage(env: WorkerEnv, msg: any) {
-  const chatId = msg?.chat?.id;
-  const from = msg?.from;
+  if (!msg || !msg.chat || msg.chat.type !== "private" || msg.from?.is_bot) return;
+  const chatId = String(msg.chat.id);
+  const from = msg.from;
   if (!chatId || !from) return;
 
   const tid = String(from.id);
   const text = String(msg.text || "").trim();
-  const firstName = from.first_name || "User";
-  const lastName = from.last_name || "";
-  const username = from.username || "";
+  const firstName = String(from.first_name || "User").trim() || "User";
+  const lastName = String(from.last_name || "").trim();
+  const username = String(from.username || "").trim();
 
   let refId: string | null = null;
   if (text.startsWith("/start")) {
@@ -512,7 +558,7 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
   const existingUser = await fetchFirebase<any>(env, `users/${tid}`);
   const nowIso = new Date().toISOString();
 
-  if (!existingUser) {
+  if (!existingUser || !existingUser.telegramId) {
     const newUser = {
       telegramId: tid,
       username,
@@ -541,6 +587,18 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
       updatedAt: Date.now()
     };
     await putFirebase(env, `users/${tid}`, newUser);
+
+    if (wb > 0) {
+      const wbLogId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      await putFirebase(env, `logs/${wbLogId}`, {
+        id: wbLogId,
+        telegramId: tid,
+        kind: "task",
+        label: "🎁 সাইনআপ ওয়েলকাম বোনাস",
+        amount: Number(wb.toFixed(2)),
+        createdAt: nowIso
+      });
+    }
 
     if (refId && refId !== tid) {
       const existingRefs = (await fetchFirebase<Record<string, any>>(env, "referrals")) || {};
@@ -615,20 +673,56 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
   }
 
   const currentBal = Number(existingUser.balance || 0);
-  if (!existingUser.welcomeSent) {
-    const delivered = await sendTelegramMessage(
+  const wasWelcomeMissing = !existingUser.welcomeSent;
+
+  await patchFirebaseItem(env, `users/${tid}`, {
+    firstName,
+    lastName: lastName || existingUser.lastName || "",
+    username: username || existingUser.username || "",
+    welcomeSent: true,
+    lastLogin: nowIso
+  });
+
+  if (wasWelcomeMissing) {
+    await sendTelegramMessage(
       env,
       chatId,
       buildWelcomeMessageText({ firstName: existingUser.firstName || firstName, welcomeBonus: wb, balance: currentBal, referralBonus: l1Bonus, minWithdraw }),
       openMarkup
     );
-    if (delivered) {
-      await patchFirebaseItem(env, `users/${tid}`, { firstName, lastName, username, welcomeSent: true });
-      return;
-    }
+    return;
   }
 
-  await sendTelegramMessage(env, chatId, `💵 আপনার বর্তমান ব্যালেন্স আছে: <b>$${currentBal.toFixed(2)} USDT</b>`, openMarkup);
+  const singleBalanceMsg = `💵 <b>আপনার বর্তমান ব্যালেন্স আছে: $${currentBal.toFixed(2)} USDT</b>\n\n👤 <b>ইউজার:</b> ${sanitizeHtml(firstName)}\n👥 <b>মোট রেফারেল:</b> ${Number(existingUser.referralCount || 0)} জন\n\n🚀 কাজ শুরু করতে বা ব্যালেন্স তুলতে নিচের বাটনে ক্লিক করুন:`;
+  await sendTelegramMessage(env, chatId, singleBalanceMsg, openMarkup);
+}
+
+async function handleTelegramCallbackQuery(env: WorkerEnv, query: any) {
+  if (!query || !query.message) return;
+  const callbackId = String(query.id);
+  const chatId = String(query.message.chat?.id || query.from?.id);
+  const data = String(query.data || "");
+  const firstName = String(query.from?.first_name || "User").trim() || "User";
+
+  if (data === "check_channels" || data === "verify") {
+    const cfg = await getServerConfigWithDefaults(env);
+    const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
+    const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
+    const { allJoined, missingChannels } = await checkAllRequiredChannels(env, chatId);
+
+    if (allJoined) {
+      await patchFirebaseItem(env, `users/${chatId}`, { verified: true });
+      await answerCallbackQuery(env, callbackId, "🎉 অভিনন্দন! চ্যানেল ভেরিফিকেশন সফল হয়েছে!", true);
+      const user = await fetchFirebase<any>(env, `users/${chatId}`);
+      const bal = Number(user?.balance || 0).toFixed(2);
+      const successText = `🎉 <b>অভিনন্দন ${sanitizeHtml(firstName)}!</b>\n\n✅ <b>আপনার চ্যানেল ভেরিফিকেশন সফল হয়েছে!</b>\n💵 <b>আপনার বর্তমান ব্যালেন্স আছে:</b> $${bal} USDT\n\n🚀 নিচের বাটনে ক্লিক করে অ্যাপ ওপেন করুন:`;
+      await sendTelegramMessage(env, chatId, successText, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`));
+    } else {
+      await answerCallbackQuery(env, callbackId, `⚠️ আপনি এখনো ${missingChannels.join(" ও ")} এ জয়েন করেননি! দয়া করে আগে জয়েন করুন।`, true);
+    }
+  } else {
+    await answerCallbackQuery(env, callbackId);
+  }
 }
 
 export default {
@@ -916,6 +1010,9 @@ export default {
         const update = await readJson(request);
         if (update?.message) {
           ctx.waitUntil(handleTelegramMessage(env, update.message).catch(() => {}));
+        }
+        if (update?.callback_query) {
+          ctx.waitUntil(handleTelegramCallbackQuery(env, update.callback_query).catch(() => {}));
         }
         return json({ ok: true });
       }
@@ -1314,6 +1411,52 @@ export default {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ menu_button: { type: "web_app", text: `🚀 Open ${cfg.appName || "Nagad88"}`, web_app: { url: targetUrl } } })
+        });
+        return json(await r.json().catch(() => ({ ok: false })));
+      }
+
+      if (pathname === "/api/bot/sync-profile" && request.method === "POST") {
+        const auth = await getCallerAuth(env, request);
+        if (!auth.isAdmin) return json({ ok: false, error: "admin_unauthorized" }, 401);
+        const botToken = (env.BOT_TOKEN || "").trim();
+        if (!botToken) return json({ ok: false, error: "missing_bot_token" }, 503);
+        const cfg = await getServerConfigWithDefaults(env);
+        const activeAppName = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
+        const activeMiniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
+        const tgPost = (method: string, payload: Record<string, any>) =>
+          fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }).then((r) => r.json()).catch(() => ({ ok: false }));
+
+        await tgPost("setMyShortDescription", {
+          short_description: `🛍️ ${activeAppName} - ভিডিও বিজ্ঞাপন দেখুন ও রেফার করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে ইনকাম করুন!`
+        });
+        await tgPost("setMyDescription", {
+          description: `👋 স্বাগতম ${activeAppName} অফিসিয়াল বটে!\n\n💰 প্রতিদিন ভিডিও বিজ্ঞাপন দেখুন ও স্পেশাল টাস্ক সম্পন্ন করে সরাসরি আয় করুন।\n👥 প্রতি সফল রেফারে পাবেন +$0.50 USDT!\n💵 নূন্যতম উইথড্র: $5.00 USDT (বিকাশ, নগদ, বাইন্যান্স)।\n\n🚀 এখনই কাজ শুরু করতে নিচের Start বাটনে চাপুন অথবা মেনু থেকে Mini App খুলুন!`
+        });
+        if (activeMiniUrl.startsWith("https://")) {
+          await tgPost("setChatMenuButton", {
+            menu_button: { type: "web_app", text: `🚀 Open ${activeAppName}`, web_app: { url: activeMiniUrl } }
+          });
+        }
+        return json({ ok: true });
+      }
+
+      if (pathname === "/api/bot/set-webhook" && request.method === "POST") {
+        const auth = await getCallerAuth(env, request);
+        if (!auth.isAdmin) return json({ ok: false, error: "admin_unauthorized" }, 401);
+        const botToken = (env.BOT_TOKEN || "").trim();
+        if (!botToken) return json({ ok: false, error: "missing_bot_token" }, 503);
+        const body = await readJson(request);
+        const cfg = await getServerConfigWithDefaults(env);
+        const base = String(body?.url || cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim().replace(/\/+$/, "");
+        const webhookUrl = base.endsWith("/api/telegram-webhook") ? base : `${base}/api/telegram-webhook`;
+        const r = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message", "callback_query"] })
         });
         return json(await r.json().catch(() => ({ ok: false })));
       }
