@@ -65,9 +65,9 @@ export function Tasks() {
                             }}
                           />
 
-                          {/* Clean Play Icon without background */}
+                          {/* Clean App-Gold Play Icon without background */}
                           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                            <Play className="h-8 w-8 fill-white/95 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] transition-transform duration-200 group-hover:scale-110" />
+                            <Play className="h-5 w-5 fill-[#f3c46b] text-[#f3c46b] drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] transition-transform duration-200 group-hover:scale-110" />
                           </div>
                         </div>
 
