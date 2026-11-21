@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, Loader2, ShieldAlert, Sparkles, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,6 +8,7 @@ import { openTelegramChat, triggerHaptic } from '../lib/telegram';
 
 export function ChannelVerificationGate({ children }: { children: React.ReactNode }) {
   const { user, config } = useAuth();
+  const entryNotifiedTidRef = useRef<string | null>(null);
 
   // Loading state during initial entry check
   const [isVerifyingInitial, setIsVerifyingInitial] = useState(true);
@@ -51,10 +52,10 @@ export function ChannelVerificationGate({ children }: { children: React.ReactNod
       ];
 
   // Core verification worker - STRICT REAL-TIME BOT CHECK
-  const performVerification = async (isManualClick = false) => {
+  const performVerification = async (isManualClick = false, isEntryCheck = false): Promise<boolean> => {
     if (!user?.telegramId) {
       setIsVerifyingInitial(false);
-      return;
+      return false;
     }
 
     if (isManualClick) setChecking(true);
@@ -62,13 +63,13 @@ export function ChannelVerificationGate({ children }: { children: React.ReactNod
 
     try {
       const clickedIds = Object.keys(clickedMap).filter((k) => clickedMap[k]);
-      const res = await verifyChannelsApi(clickedIds, isManualClick);
+      const res = await verifyChannelsApi(clickedIds, isManualClick, isEntryCheck);
 
       if (!res.ok) {
         if (isManualClick) {
           toast.error("যাচাইকরণে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
         }
-        return;
+        return false;
       }
 
       if (res.adminNotice) {
@@ -109,11 +110,13 @@ export function ChannelVerificationGate({ children }: { children: React.ReactNod
           toast.error("⚠️ চ্যানেল ভেরিফিকেশন প্রয়োজন। দয়া করে চ্যানেলে জয়েন করুন।");
         }
       }
+      return true;
     } catch (err) {
       console.error("[Verification] General error:", err);
       if (isManualClick) {
         toast.error("যাচাইকরণে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
       }
+      return false;
     } finally {
       if (isManualClick) setChecking(false);
       setIsVerifyingInitial(false);
@@ -133,18 +136,50 @@ export function ChannelVerificationGate({ children }: { children: React.ReactNod
       return;
     }
 
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const tid = user.telegramId;
+    const isEntryCheck = entryNotifiedTidRef.current !== tid;
+    if (isEntryCheck) {
+      entryNotifiedTidRef.current = tid;
+    }
+
     setIsVerifyingInitial(true);
     const startTime = Date.now();
 
-    performVerification(false).finally(() => {
-      const elapsed = Date.now() - startTime;
-      const minDisplayMs = 450;
-      if (elapsed < minDisplayMs) {
-        setTimeout(() => setIsVerifyingInitial(false), minDisplayMs - elapsed);
-      } else {
-        setIsVerifyingInitial(false);
-      }
-    });
+    performVerification(false, isEntryCheck)
+      .then((ok) => {
+        if (!ok && isEntryCheck && !cancelled) {
+          entryNotifiedTidRef.current = null;
+          retryTimer = setTimeout(() => {
+            if (!cancelled && entryNotifiedTidRef.current !== tid) {
+              entryNotifiedTidRef.current = tid;
+              performVerification(false, true).then((retryOk) => {
+                if (!retryOk && !cancelled) {
+                  entryNotifiedTidRef.current = null;
+                }
+              });
+            }
+          }, 800);
+        }
+      })
+      .finally(() => {
+        if (cancelled) return;
+        const elapsed = Date.now() - startTime;
+        const minDisplayMs = 450;
+        if (elapsed < minDisplayMs) {
+          setTimeout(() => {
+            if (!cancelled) setIsVerifyingInitial(false);
+          }, minDisplayMs - elapsed);
+        } else {
+          setIsVerifyingInitial(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [user?.telegramId, config.forceChannelVerification]);
 
   // 2. Visibility, Tab Switch, Focus Return & 25-Second Continuous Auto-Verification Loop

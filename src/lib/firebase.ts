@@ -399,7 +399,8 @@ export async function retryWelcomeApi(): Promise<{
 
 export async function verifyChannelsApi(
   clickedIds: string[],
-  isManualClick: boolean
+  isManualClick: boolean,
+  isEntryCheck: boolean = false
 ): Promise<{
   ok: boolean;
   verified: boolean;
@@ -411,7 +412,7 @@ export async function verifyChannelsApi(
   const res = await fetch("/api/verify-channels", {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ clickedIds, isManualClick })
+    body: JSON.stringify({ clickedIds, isManualClick, isEntryCheck })
   });
   return res.json().catch(() => ({
     ok: false,

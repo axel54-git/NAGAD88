@@ -81,9 +81,9 @@ export function Refer() {
 
       {/* 3-Stat Row */}
       <div className="mt-2.5 grid grid-cols-3 gap-2">
-        <StatPill label="L1 TOTAL" value={String(user.referralCount)} tone="text-[#fff7eb]" />
-        <StatPill label="L2 TOTAL" value={String(user.level2Count)} tone="text-amber-300" />
-        <StatPill label="EARNED" value={`$${user.referralEarned.toFixed(2)}`} tone="text-emerald-400" />
+        <StatPill label="L1 TOTAL" value={String(Math.max(Number(user.referralCount || 0), l1.length))} tone="text-[#fff7eb]" />
+        <StatPill label="L2 TOTAL" value={String(Math.max(Number(user.level2Count || 0), l2.length))} tone="text-amber-300" />
+        <StatPill label="EARNED" value={`$${Number(user.referralEarned || 0).toFixed(2)}`} tone="text-emerald-400" />
       </div>
 
       {/* Bonus Callout */}

@@ -257,7 +257,7 @@ export function getTelegramUser(): TelegramWebAppUser | null {
 export function getReferralStartParam(): string | null {
   const sanitize = (raw: string | null | undefined): string | null => {
     if (!raw) return null;
-    const clean = String(raw).trim().replace(/^(ref_|c2c_|r_|startapp_|start_)/i, '');
+    const clean = String(raw).trim().replace(/^(?:ref_|c2c_|r_|startapp_|start_|startapp\/|start\/|ref\/|r\/)/i, '');
     return clean || null;
   };
 
