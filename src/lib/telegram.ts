@@ -300,6 +300,12 @@ export function getReferralStartParam(): string | null {
       );
       if (sp) return persist(sp);
 
+      const searchSlashMatch = window.location.search.match(/(?:startapp|start|ref)\/([0-9a-zA-Z_]+)/i);
+      if (searchSlashMatch && searchSlashMatch[1]) {
+        const sSp = sanitize(searchSlashMatch[1]);
+        if (sSp) return persist(sSp);
+      }
+
       // Check pathname (e.g. /ref/12345 or /r/12345)
       const pathMatch = window.location.pathname.match(/\/(?:ref|r|startapp|start)\/([0-9a-zA-Z_]+)/i);
       if (pathMatch && pathMatch[1]) {

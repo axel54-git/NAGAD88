@@ -479,7 +479,7 @@ function buildChannelVerifiedMessageText(params: {
 }): string {
   const safeName = sanitizeHtml(params.firstName || "ইউজার");
   const cleanBot = String(params.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
-  const refLink = `https://t.me/${cleanBot}?start=ref_${params.tid}`;
+  const refLink = `https://t.me/${cleanBot}?startapp=${params.tid}`;
   return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${params.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
 }
 
