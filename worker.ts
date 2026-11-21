@@ -424,10 +424,38 @@ function buildWelcomeMessageText(opts: { firstName: string; welcomeBonus: number
   return `🎉 <b>স্বাগতম ${safeName}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${opts.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>বর্তমান ব্যালেন্স:</b> $${opts.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${opts.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${opts.minWithdraw.toFixed(2)} USDT\n\n🚀 এখনই কাজ শুরু করতে নিচের বাটনে চাপুন!`;
 }
 
-function buildChannelVerifiedMessageText(opts: { firstName: string; balance: number; referralCount: number; botUsername: string; tid: string }): string {
+let cachedHasMainWebApp: { value: boolean; at: number } | null = null;
+async function getBotHasMainWebApp(env: WorkerEnv): Promise<boolean> {
+  const now = Date.now();
+  if (cachedHasMainWebApp && now - cachedHasMainWebApp.at < 60_000) {
+    return cachedHasMainWebApp.value;
+  }
+  const botToken = (env.BOT_TOKEN || "").trim();
+  if (!botToken) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const parsed: any = await r.json().catch(() => null);
+    const val = Boolean(parsed?.ok && parsed?.result?.has_main_web_app);
+    cachedHasMainWebApp = { value: val, at: now };
+    return val;
+  } catch {
+    return cachedHasMainWebApp?.value ?? false;
+  }
+}
+
+function buildChannelVerifiedMessageText(opts: {
+  firstName: string;
+  balance: number;
+  referralCount: number;
+  botUsername: string;
+  tid: string;
+  hasMainWebApp?: boolean;
+}): string {
   const safeName = sanitizeHtml(opts.firstName || "ইউজার");
   const cleanBot = String(opts.botUsername || "Nadag88Bot").trim().replace(/^@/, "");
-  const refLink = `https://t.me/${cleanBot}?startapp=${opts.tid}`;
+  const refLink = opts.hasMainWebApp
+    ? `https://t.me/${cleanBot}?startapp=${opts.tid}`
+    : `https://t.me/${cleanBot}?start=${opts.tid}`;
   return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${opts.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${opts.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
 }
 
@@ -684,6 +712,10 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
   const l1Bonus = Number(cfg.referralBonus ?? 0.5);
   const minWithdraw = Number(cfg.minWithdraw ?? 5);
   const openMarkup = buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`);
+  const userMiniUrl = refId
+    ? `${miniUrl}${miniUrl.includes("?") ? "&" : "?"}startapp=${encodeURIComponent(refId)}`
+    : miniUrl;
+  const userOpenMarkup = buildWebAppMarkup(userMiniUrl, `🚀 Open ${appTitle} App`);
 
   const existingUser = await fetchFirebase<any>(env, `users/${tid}`);
   const nowIso = new Date().toISOString();
@@ -745,7 +777,7 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
       env,
       chatId,
       buildWelcomeMessageText({ firstName, welcomeBonus: wb, balance: Number(newUser.balance), referralBonus: l1Bonus, minWithdraw }),
-      openMarkup
+      userOpenMarkup
     );
     return;
   }
@@ -777,13 +809,13 @@ async function handleTelegramMessage(env: WorkerEnv, msg: any) {
       env,
       chatId,
       buildWelcomeMessageText({ firstName: existingUser.firstName || firstName, welcomeBonus: wb, balance: currentBal, referralBonus: l1Bonus, minWithdraw }),
-      openMarkup
+      userOpenMarkup
     );
     return;
   }
 
   const singleBalanceMsg = `💵 <b>আপনার বর্তমান ব্যালেন্স আছে: $${currentBal.toFixed(2)} USDT</b>\n\n👤 <b>ইউজার:</b> ${sanitizeHtml(firstName)}\n👥 <b>মোট রেফারেল:</b> ${Number(existingUser.referralCount || 0)} জন\n\n🚀 কাজ শুরু করতে বা ব্যালেন্স তুলতে নিচের বাটনে ক্লিক করুন:`;
-  await sendTelegramMessage(env, chatId, singleBalanceMsg, openMarkup);
+  await sendTelegramMessage(env, chatId, singleBalanceMsg, userOpenMarkup);
 }
 
 async function handleTelegramCallbackQuery(env: WorkerEnv, query: any) {
@@ -804,12 +836,14 @@ async function handleTelegramCallbackQuery(env: WorkerEnv, query: any) {
       await answerCallbackQuery(env, callbackId, "🎉 অভিনন্দন! চ্যানেল ভেরিফিকেশন সফল হয়েছে!", true);
       const user = await fetchFirebase<any>(env, `users/${chatId}`);
       const botUser = String(cfg.botUsername || env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const hasMainWebApp = await getBotHasMainWebApp(env);
       const successText = buildChannelVerifiedMessageText({
         firstName: user?.firstName || firstName,
         balance: Number(user?.balance || 0),
         referralCount: Number(user?.referralCount || 0),
         botUsername: botUser,
-        tid: chatId
+        tid: chatId,
+        hasMainWebApp
       });
       await sendTelegramMessage(env, chatId, successText, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`));
     } else {
@@ -1124,12 +1158,14 @@ export default {
           const appTitle = String(cfg.appName || env.APP_NAME || "Nagad88").trim();
           const miniUrl = String(cfg.miniAppUrl || env.MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
           const botUser = String(cfg.botUsername || env.BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+          const hasMainWebApp = await getBotHasMainWebApp(env);
           const verifyMsg = buildChannelVerifiedMessageText({
             firstName: user.firstName || "ইউজার",
             balance: Number(user.balance || 0),
             referralCount: Number(user.referralCount || 0),
             botUsername: botUser,
-            tid
+            tid,
+            hasMainWebApp
           });
           await sendTelegramMessage(env, tid, verifyMsg, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`)).catch(() => {});
         }
@@ -1551,16 +1587,18 @@ export default {
       // 8. RTDB Proxy Endpoints & SSE Snapshot
       if (pathname === "/api/rtdb/stream" && request.method === "GET") {
         const auth = await getCallerAuth(env, request);
-        const [usersRaw, cfgRaw, wdsRaw, refsRaw, subsRaw] = await Promise.all([
+        const [usersRaw, cfgRaw, wdsRaw, refsRaw, subsRaw, hasMainWebApp] = await Promise.all([
           fetchFirebase<Record<string, any>>(env, "users"),
           fetchFirebase<Record<string, any>>(env, "config"),
           auth.isAdmin || auth.userTid ? fetchFirebase<Record<string, any>>(env, "withdrawals") : Promise.resolve(null),
           auth.isAdmin || auth.userTid ? fetchFirebase<Record<string, any>>(env, "referrals") : Promise.resolve(null),
-          auth.isAdmin || auth.userTid ? fetchFirebase<Record<string, any>>(env, "taskSubmissions") : Promise.resolve(null)
+          auth.isAdmin || auth.userTid ? fetchFirebase<Record<string, any>>(env, "taskSubmissions") : Promise.resolve(null),
+          getBotHasMainWebApp(env)
         ]);
         const safeCfg = sanitizePublicConfig(cfgRaw) || {};
         if (!safeCfg.botUsername) safeCfg.botUsername = (env.BOT_USERNAME || "Nadag88Bot").replace(/^@/, "");
         if (!safeCfg.miniAppUrl) safeCfg.miniAppUrl = env.MINI_APP_URL || DEFAULT_MINI_APP_URL;
+        safeCfg.hasMainWebApp = hasMainWebApp;
         const wds = toSortedArray("withdrawals", wdsRaw);
         const refs = toSortedArray("referrals", refsRaw);
         const subs = toSortedArray("taskSubmissions", subsRaw);
@@ -1580,10 +1618,14 @@ export default {
 
       if (pathname === "/api/rtdb/config") {
         if (request.method === "GET") {
-          const cfg = await fetchFirebase<Record<string, any>>(env, "config");
+          const [cfg, hasMainWebApp] = await Promise.all([
+            fetchFirebase<Record<string, any>>(env, "config"),
+            getBotHasMainWebApp(env)
+          ]);
           const safe = sanitizePublicConfig(cfg) || {};
           if (!safe.botUsername) safe.botUsername = (env.BOT_USERNAME || "Nadag88Bot").replace(/^@/, "");
           if (!safe.miniAppUrl) safe.miniAppUrl = env.MINI_APP_URL || DEFAULT_MINI_APP_URL;
+          safe.hasMainWebApp = hasMainWebApp;
           return json({ ok: true, config: Object.keys(safe).length > 0 ? safe : null });
         }
         if (request.method === "PUT") {
@@ -1649,14 +1691,28 @@ export default {
         if (request.method === "DELETE") {
           if (!auth.isAdmin) return json({ ok: false, error: "admin_unauthorized" }, 401);
           await deleteFirebase(env, `users/${tid}`);
-          const allWds = (await fetchFirebase<Record<string, any>>(env, "withdrawals")) || {};
-          for (const [key, val] of Object.entries(allWds)) {
-            if (val?.telegramId === tid) await deleteFirebase(env, `withdrawals/${key}`);
+          const [allWds, allRefs, allLogs, allSubs] = await Promise.all([
+            fetchFirebase<Record<string, any>>(env, "withdrawals"),
+            fetchFirebase<Record<string, any>>(env, "referrals"),
+            fetchFirebase<Record<string, any>>(env, "logs"),
+            fetchFirebase<Record<string, any>>(env, "taskSubmissions")
+          ]);
+          const deletes: Promise<boolean>[] = [];
+          for (const [key, val] of Object.entries(allWds || {})) {
+            if (val?.telegramId === tid) deletes.push(deleteFirebase(env, `withdrawals/${key}`));
           }
-          const allRefs = (await fetchFirebase<Record<string, any>>(env, "referrals")) || {};
-          for (const [key, val] of Object.entries(allRefs)) {
-            if (val?.referredTelegramId === tid) await deleteFirebase(env, `referrals/${key}`);
+          for (const [key, val] of Object.entries(allRefs || {})) {
+            if (val?.referredTelegramId === tid || val?.referrerTelegramId === tid) {
+              deletes.push(deleteFirebase(env, `referrals/${key}`));
+            }
           }
+          for (const [key, val] of Object.entries(allLogs || {})) {
+            if (val?.telegramId === tid) deletes.push(deleteFirebase(env, `logs/${key}`));
+          }
+          for (const [key, val] of Object.entries(allSubs || {})) {
+            if (val?.telegramId === tid) deletes.push(deleteFirebase(env, `taskSubmissions/${key}`));
+          }
+          await Promise.all(deletes);
           return json({ ok: true });
         }
       }

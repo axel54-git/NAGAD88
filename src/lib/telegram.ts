@@ -265,7 +265,6 @@ export function getReferralStartParam(): string | null {
     if (!val) return null;
     try {
       sessionStorage.setItem('c2c_referral_start_param', val);
-      localStorage.setItem('c2c_referral_start_param', val);
     } catch {}
     return val;
   };
@@ -330,10 +329,8 @@ export function getReferralStartParam(): string | null {
         if (hashSp) return persist(hashSp);
       }
 
-      // 5. Check persistent storage cache
-      const cached =
-        sanitize(sessionStorage.getItem('c2c_referral_start_param')) ||
-        sanitize(localStorage.getItem('c2c_referral_start_param'));
+      // 5. Check session-scoped fallback cache
+      const cached = sanitize(sessionStorage.getItem('c2c_referral_start_param'));
       if (cached) return cached;
     } catch {}
   }

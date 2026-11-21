@@ -405,10 +405,23 @@ export async function loginOrRegisterUser(
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(`nogod88_user_registered_${tid}`, '1');
+      localStorage.removeItem('c2c_referral_start_param');
+      sessionStorage.removeItem('c2c_referral_start_param');
+      if (res.isBrandNewUser) {
+        sessionStorage.removeItem(`tg_gate_ok_${tid}`);
+      }
     } catch {}
   }
 
   appStore.update((db) => {
+    if (res.isBrandNewUser) {
+      db.withdrawals = db.withdrawals.filter((w) => w.telegramId !== tid);
+      db.referrals = db.referrals.filter(
+        (r) => r.referredTelegramId !== tid && r.referrerTelegramId !== tid
+      );
+      db.logs = db.logs.filter((l) => l.telegramId !== tid);
+      db.taskSubmissions = (db.taskSubmissions || []).filter((s) => s.telegramId !== tid);
+    }
     db.users[tid] = authoritativeUser;
   });
 

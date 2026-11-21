@@ -230,10 +230,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!sessionTid) return;
     const unsubscribe = subscribeToFirebaseUser(sessionTid, (remote) => {
       if (!remote) {
-        // User was deleted by admin from Firebase
-        localStorage.removeItem(STORAGE_TID);
+        // User was permanently deleted by admin from Firebase
+        try {
+          localStorage.removeItem(STORAGE_TID);
+          localStorage.removeItem(`nogod88_user_registered_${sessionTid}`);
+          localStorage.removeItem('c2c_referral_start_param');
+          sessionStorage.removeItem('c2c_referral_start_param');
+          sessionStorage.removeItem(`tg_gate_ok_${sessionTid}`);
+        } catch {}
+        clearUserToken();
         appStore.update((draft) => {
           delete draft.users[sessionTid];
+          draft.withdrawals = draft.withdrawals.filter((w) => w.telegramId !== sessionTid);
+          draft.referrals = draft.referrals.filter(
+            (r) => r.referredTelegramId !== sessionTid && r.referrerTelegramId !== sessionTid
+          );
+          draft.logs = draft.logs.filter((l) => l.telegramId !== sessionTid);
+          draft.taskSubmissions = (draft.taskSubmissions || []).filter((s) => s.telegramId !== sessionTid);
         });
         setSessionTid(null);
         setStatus('error');
@@ -322,6 +335,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           for (const fid of fakeIds) {
             delete d.users[fid];
           }
+          const remoteKeys = Object.keys(remoteUsers);
+          if (remoteKeys.length > 0) {
+            for (const existingId of Object.keys(d.users)) {
+              if (!remoteUsers[existingId] && existingId !== sessionTid) {
+                delete d.users[existingId];
+              }
+            }
+          }
           for (const [uid, u] of Object.entries(remoteUsers)) {
             if (!fakeIds.has(uid) && u && u.telegramId) {
               const cur = d.users[uid];
@@ -338,7 +359,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
     return () => unsub();
-  }, []);
+  }, [sessionTid]);
 
   // 24/7 Channel Membership Background Surveillance (Server-Verified)
   useEffect(() => {

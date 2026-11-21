@@ -41,7 +41,9 @@ export function Refer() {
   if (!user) return null;
 
   const botUser = config.botUsername.replace(/^@/, '');
-  const referralLink = `https://t.me/${botUser}?startapp=${user.telegramId}`;
+  const referralLink = config.hasMainWebApp
+    ? `https://t.me/${botUser}?startapp=${user.telegramId}`
+    : `https://t.me/${botUser}?start=${user.telegramId}`;
 
   const handleCopy = async () => {
     try {

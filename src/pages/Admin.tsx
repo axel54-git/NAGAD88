@@ -277,15 +277,24 @@ export function Admin() {
 
     try {
       // 1. Delete permanently from Firebase Realtime Database
-      await deleteUserFromFirebase(u.telegramId);
+      const ok = await deleteUserFromFirebase(u.telegramId);
+      if (!ok) {
+        toast.error("ইউজার ডিলিট করা সম্ভব হয়নি");
+        return;
+      }
 
       // 2. Remove from local store immediately
       appStore.update((d) => {
         delete d.users[u.telegramId];
         d.withdrawals = d.withdrawals.filter((w) => w.telegramId !== u.telegramId);
+        d.referrals = d.referrals.filter(
+          (r) => r.referredTelegramId !== u.telegramId && r.referrerTelegramId !== u.telegramId
+        );
+        d.logs = d.logs.filter((l) => l.telegramId !== u.telegramId);
+        d.taskSubmissions = (d.taskSubmissions || []).filter((s) => s.telegramId !== u.telegramId);
       });
 
-      toast.success(`ইউজার "${displayName}" ফায়ারবেস থেকে সফলভাবে মুছে ফেলা হয়েছে!`);
+      toast.success(`ইউজার "${displayName}" ফায়ারবেস থেকে চিরতরে মুছে ফেলা হয়েছে!`);
     } catch (err) {
       console.error(err);
       toast.error("ইউজার ডিলিট করা সম্ভব হয়নি");

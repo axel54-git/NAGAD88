@@ -500,11 +500,16 @@ export async function syncRtdbCache(): Promise<void> {
   }
 }
 
-export function getCachedSnapshot(auth: SseClientAuth = { isAdmin: false, userTid: null }) {
+export function getCachedSnapshot(
+  auth: SseClientAuth = { isAdmin: false, userTid: null },
+  extraConfig?: Record<string, any>
+) {
   const allWds = toSortedArray("withdrawals", cache.withdrawals);
   const allRefs = toSortedArray("referrals", cache.referrals);
   const allSubs = toSortedArray("taskSubmissions", cache.taskSubmissions);
   const allBcs = toSortedArray("broadcasts", cache.broadcasts);
+  const baseCfg = sanitizePublicConfig(cache.config) || {};
+  const mergedCfg = extraConfig ? { ...baseCfg, ...extraConfig } : sanitizePublicConfig(cache.config);
 
   const tid = auth.userTid;
   return {
@@ -527,7 +532,7 @@ export function getCachedSnapshot(auth: SseClientAuth = { isAdmin: false, userTi
       : tid
       ? allSubs.filter((s) => s?.telegramId === tid)
       : [],
-    config: sanitizePublicConfig(cache.config),
+    config: mergedCfg,
   };
 }
 
@@ -537,7 +542,8 @@ export function getRawServerConfig(): Record<string, any> | null {
 
 export function registerSseClient(
   res: Response,
-  auth: SseClientAuth = { isAdmin: false, userTid: null }
+  auth: SseClientAuth = { isAdmin: false, userTid: null },
+  extraConfig?: Record<string, any>
 ): void {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -546,7 +552,7 @@ export function registerSseClient(
 
   sseClients.set(res, auth);
 
-  const snap = getCachedSnapshot(auth);
+  const snap = getCachedSnapshot(auth, extraConfig);
   sendSsePayload(res, "snapshot", snap);
 
   const keepAlive = setInterval(() => {

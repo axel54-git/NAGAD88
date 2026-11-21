@@ -470,16 +470,37 @@ function buildWelcomeMessageText(params: {
   return `🎉 <b>স্বাগতম ${sanitizeHtml(params.firstName)}!</b>\n\n🎁 <b>নতুন জয়েনিং বোনাস:</b> +$${params.welcomeBonus.toFixed(2)} USDT আপনার একাউন্টে যোগ হয়েছে!\n💵 <b>বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n\n👉 প্রতিদিন ভিডিও অ্যাড দেখুন ও স্পেশাল টাস্ক পূরণ করে সরাসরি বিকাশ, নগদ বা বাইন্যান্সে টাকা তুলুন।\n👥 <b>প্রতি সফল রেফারে পাবেন:</b> +$${params.referralBonus.toFixed(2)} USDT!\n💰 <b>নূন্যতম উইথড্র:</b> $${params.minWithdraw.toFixed(2)} USDT\n\n🚀 এখনই কাজ শুরু করতে নিচের বাটনে চাপুন!`;
 }
 
+let cachedHasMainWebApp: { value: boolean; at: number } | null = null;
+async function getBotHasMainWebApp(): Promise<boolean> {
+  const now = Date.now();
+  if (cachedHasMainWebApp && now - cachedHasMainWebApp.at < 60_000) {
+    return cachedHasMainWebApp.value;
+  }
+  if (!BOT_TOKEN) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
+    const parsed: any = await r.json().catch(() => null);
+    const val = Boolean(parsed?.ok && parsed?.result?.has_main_web_app);
+    cachedHasMainWebApp = { value: val, at: now };
+    return val;
+  } catch {
+    return cachedHasMainWebApp?.value ?? false;
+  }
+}
+
 function buildChannelVerifiedMessageText(params: {
   firstName: string;
   balance: number;
   referralCount: number;
   botUsername: string;
   tid: string;
+  hasMainWebApp?: boolean;
 }): string {
   const safeName = sanitizeHtml(params.firstName || "ইউজার");
   const cleanBot = String(params.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
-  const refLink = `https://t.me/${cleanBot}?startapp=${params.tid}`;
+  const refLink = params.hasMainWebApp
+    ? `https://t.me/${cleanBot}?startapp=${params.tid}`
+    : `https://t.me/${cleanBot}?start=${params.tid}`;
   return `✅ <b>চ্যানেল ভেরিফিকেশন সফল হয়েছে, ${safeName}!</b>\n\n💵 <b>আপনার বর্তমান ব্যালেন্স:</b> $${params.balance.toFixed(2)} USDT\n👥 <b>বর্তমান রেফার:</b> ${params.referralCount} জন\n\n🔗 <b>আপনার রেফারেল লিংক (ক্লিক করলেই কপি হবে):</b>\n<code>${sanitizeHtml(refLink)}</code>`;
 }
 
@@ -633,6 +654,10 @@ async function handleTelegramMessage(message: any) {
   const l1Bonus = Number(cfg.referralBonus ?? 0.5);
   const minWithdraw = Number(cfg.minWithdraw ?? 5);
   const openAppMarkup = buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`);
+  const userMiniUrl = referrerId && miniUrl
+    ? `${miniUrl}${miniUrl.includes("?") ? "&" : "?"}startapp=${encodeURIComponent(referrerId)}`
+    : miniUrl;
+  const userOpenAppMarkup = buildWebAppMarkup(userMiniUrl, `🚀 Open ${appTitle} App`);
 
   const existingUser = await fetchFirebase<any>(`users/${chatId}`);
   const now = new Date().toISOString();
@@ -699,7 +724,7 @@ async function handleTelegramMessage(message: any) {
       referralBonus: l1Bonus,
       minWithdraw
     });
-    await sendTelegramMessage(chatId, welcomeText, openAppMarkup);
+    await sendTelegramMessage(chatId, welcomeText, userOpenAppMarkup);
     return;
   }
 
@@ -734,13 +759,13 @@ async function handleTelegramMessage(message: any) {
       referralBonus: l1Bonus,
       minWithdraw
     });
-    await sendTelegramMessage(chatId, welcomeText, openAppMarkup);
+    await sendTelegramMessage(chatId, welcomeText, userOpenAppMarkup);
     return;
   }
 
   // Every subsequent message from user -> send ONE single message showing current balance
   const singleBalanceMsg = `💵 <b>আপনার বর্তমান ব্যালেন্স আছে: $${currentBal.toFixed(2)} USDT</b>\n\n👤 <b>ইউজার:</b> ${sanitizeHtml(firstName)}\n👥 <b>মোট রেফারেল:</b> ${Number(existingUser.referralCount || 0)} জন\n\n🚀 কাজ শুরু করতে বা ব্যালেন্স তুলতে নিচের বাটনে ক্লিক করুন:`;
-  await sendTelegramMessage(chatId, singleBalanceMsg, openAppMarkup);
+  await sendTelegramMessage(chatId, singleBalanceMsg, userOpenAppMarkup);
 }
 
 // Handle incoming Telegram callback query (from inline button clicks)
@@ -769,12 +794,14 @@ async function handleTelegramCallbackQuery(query: any) {
 
       const user = await fetchFirebase<any>(`users/${chatId}`);
       const botUser = String(cfg.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const hasMainWebApp = await getBotHasMainWebApp();
       const successText = buildChannelVerifiedMessageText({
         firstName: user?.firstName || firstName,
         balance: Number(user?.balance || 0),
         referralCount: Number(user?.referralCount || 0),
         botUsername: botUser,
-        tid: chatId
+        tid: chatId,
+        hasMainWebApp
       });
 
       await sendTelegramMessage(chatId, successText, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`));
@@ -1978,12 +2005,14 @@ app.post("/api/verify-channels", requireUser, async (req, res) => {
       const appTitle = String(cfg.appName || APP_NAME).trim() || APP_NAME;
       const miniUrl = String(cfg.miniAppUrl || MINI_APP_URL || DEFAULT_MINI_APP_URL).trim();
       const botUser = String(cfg.botUsername || BOT_USERNAME || "Nadag88Bot").trim().replace(/^@/, "");
+      const hasMainWebApp = await getBotHasMainWebApp();
       const verifyMsg = buildChannelVerifiedMessageText({
         firstName: user.firstName || "ইউজার",
         balance: Number(user.balance || 0),
         referralCount: Number(user.referralCount || 0),
         botUsername: botUser,
-        tid
+        tid,
+        hasMainWebApp
       });
       await sendTelegramMessage(tid, verifyMsg, buildWebAppMarkup(miniUrl, `🚀 Open ${appTitle} App`)).catch(() => {});
     }
@@ -2569,9 +2598,10 @@ app.post("/api/user/credit", requireAdmin, async (req, res) => {
 // ==========================================
 // SECURE ENCRYPTED RTDB PROXY & IMAGE PROXY
 // ==========================================
-app.get("/api/rtdb/stream", (req, res) => {
+app.get("/api/rtdb/stream", async (req, res) => {
   const auth = getCallerAuth(req);
-  registerSseClient(res, auth);
+  const hasMainWebApp = await getBotHasMainWebApp();
+  registerSseClient(res, auth, { hasMainWebApp });
 });
 
 app.get("/api/rtdb/users", async (req, res) => {
@@ -2646,19 +2676,29 @@ app.delete("/api/rtdb/users/:tid", requireAdmin, async (req, res) => {
 
   await deleteFirebase(`users/${tid}`);
 
-  const allWds = (await fetchFirebase<Record<string, any>>("withdrawals")) || {};
-  for (const [key, val] of Object.entries(allWds)) {
-    if (val?.telegramId === tid) {
-      await deleteFirebase(`withdrawals/${key}`);
-    }
-  }
+  const [allWds, allRefs, allLogs, allSubs] = await Promise.all([
+    fetchFirebase<Record<string, any>>("withdrawals"),
+    fetchFirebase<Record<string, any>>("referrals"),
+    fetchFirebase<Record<string, any>>("logs"),
+    fetchFirebase<Record<string, any>>("taskSubmissions")
+  ]);
 
-  const allRefs = (await fetchFirebase<Record<string, any>>("referrals")) || {};
-  for (const [key, val] of Object.entries(allRefs)) {
-    if (val?.referredTelegramId === tid) {
-      await deleteFirebase(`referrals/${key}`);
+  const deletes: Promise<boolean>[] = [];
+  for (const [key, val] of Object.entries(allWds || {})) {
+    if (val?.telegramId === tid) deletes.push(deleteFirebase(`withdrawals/${key}`));
+  }
+  for (const [key, val] of Object.entries(allRefs || {})) {
+    if (val?.referredTelegramId === tid || val?.referrerTelegramId === tid) {
+      deletes.push(deleteFirebase(`referrals/${key}`));
     }
   }
+  for (const [key, val] of Object.entries(allLogs || {})) {
+    if (val?.telegramId === tid) deletes.push(deleteFirebase(`logs/${key}`));
+  }
+  for (const [key, val] of Object.entries(allSubs || {})) {
+    if (val?.telegramId === tid) deletes.push(deleteFirebase(`taskSubmissions/${key}`));
+  }
+  await Promise.all(deletes);
 
   res.json({ ok: true });
 });
@@ -2713,10 +2753,14 @@ app.put("/api/rtdb/referrals/:id", requireAdmin, async (req, res) => {
 });
 
 app.get("/api/rtdb/config", async (req, res) => {
-  const cfg = await fetchFirebase<Record<string, any>>("config");
+  const [cfg, hasMainWebApp] = await Promise.all([
+    fetchFirebase<Record<string, any>>("config"),
+    getBotHasMainWebApp()
+  ]);
   const safe = sanitizePublicConfig(cfg) || {};
   if (!safe.botUsername) safe.botUsername = BOT_USERNAME;
   if (!safe.miniAppUrl && MINI_APP_URL) safe.miniAppUrl = MINI_APP_URL;
+  safe.hasMainWebApp = hasMainWebApp;
   res.json({ ok: true, config: Object.keys(safe).length > 0 ? safe : null });
 });
 
