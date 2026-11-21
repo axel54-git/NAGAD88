@@ -185,7 +185,6 @@ export interface AppConfig {
   adminPassword?: string;
   adminPinHash?: string;
   allowDemoLogin: boolean;
-  hasMainWebApp?: boolean;
   forceChannelVerification?: boolean;
   requiredChannels?: RequiredChannel[];
   adSlots: AdSlot[];
